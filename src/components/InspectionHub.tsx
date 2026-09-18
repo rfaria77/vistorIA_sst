@@ -21,6 +21,7 @@ import {
   DollarSign,
   ChevronRight,
   FileCheck,
+  Fingerprint,
 } from "lucide-react";
 import { PWAInstallButton } from "./PWAInstallButton";
 import {
@@ -37,6 +38,7 @@ import {
   getLogoConsultoria,
   calcularDiasSemEdicao,
 } from "../utils/storage";
+import { isBiometriaHabilitada } from "../utils/biometrics";
 import { formatarBRL } from "../data/nr28Data";
 import { gerarLaudoPericialPDF } from "../utils/pdfGenerator";
 
@@ -207,6 +209,15 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                 >
                   {usuario.perfil === "admin" ? "ADMINISTRADOR" : "INSPETOR"}
                 </span>
+                {isBiometriaHabilitada(usuario.id) && (
+                  <span
+                    className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 inline-flex items-center gap-1"
+                    title="Autenticação Biométrica ativa neste dispositivo"
+                  >
+                    <Fingerprint className="w-2.5 h-2.5 text-emerald-400" />
+                    <span className="hidden md:inline">Biometria Ativa</span>
+                  </span>
+                )}
               </div>
               <div className="text-[10px] text-slate-400">
                 {usuario.cargo} • {usuario.registro}

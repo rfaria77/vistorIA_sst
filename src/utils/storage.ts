@@ -23,7 +23,20 @@ export const USUARIO_ADMIN_RAUL: UsuarioAuditor = {
   criadoEm: "18/09/2026",
 };
 
-export const USUARIOS_PADRAO: UsuarioAuditor[] = [USUARIO_ADMIN_RAUL];
+export const USUARIO_INSPETOR_MARCOS: UsuarioAuditor = {
+  id: "usr-inspetor-marcos",
+  nome: "Marcos Vinicius Ferreira Mendes",
+  email: "marcosvinicius@aecsst.com.br",
+  registro: "00000/MG",
+  cargo: "Técnico em Segurança do Trabalho",
+  perfil: "inspetor",
+  senha: "abc123",
+  ativo: true,
+  primeiroAcesso: true,
+  criadoEm: "18/09/2026",
+};
+
+export const USUARIOS_PADRAO: UsuarioAuditor[] = [USUARIO_ADMIN_RAUL, USUARIO_INSPETOR_MARCOS];
 
 export function getUsuarios(): UsuarioAuditor[] {
   try {
@@ -69,6 +82,28 @@ export function getUsuarios(): UsuarioAuditor[] {
       };
     } else {
       filtrados.unshift(USUARIO_ADMIN_RAUL);
+    }
+
+    // Garante que Marcos Vinicius Ferreira Mendes está cadastrado como Inspetor com a senha inicial abc123
+    const idxMarcos = filtrados.findIndex(
+      (u) =>
+        u.id === USUARIO_INSPETOR_MARCOS.id ||
+        u.nome.toLowerCase() === USUARIO_INSPETOR_MARCOS.nome.toLowerCase() ||
+        u.email.toLowerCase() === USUARIO_INSPETOR_MARCOS.email.toLowerCase()
+    );
+
+    if (idxMarcos >= 0) {
+      filtrados[idxMarcos] = {
+        ...filtrados[idxMarcos],
+        nome: "Marcos Vinicius Ferreira Mendes",
+        email: "marcosvinicius@aecsst.com.br",
+        registro: "00000/MG",
+        cargo: "Técnico em Segurança do Trabalho",
+        perfil: "inspetor",
+        ativo: true,
+      };
+    } else {
+      filtrados.push(USUARIO_INSPETOR_MARCOS);
     }
 
     localStorage.setItem(STORAGE_KEYS.USUARIOS, JSON.stringify(filtrados));
