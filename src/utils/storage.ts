@@ -10,41 +10,20 @@ const STORAGE_KEYS = {
   USUARIOS: "vistoria_sst_usuarios",
 };
 
-export const USUARIOS_PADRAO: UsuarioAuditor[] = [
-  {
-    id: "usr-admin-1",
-    nome: "Eng. Roberto Vasconcelos",
-    email: "roberto.sst@engpericial.com.br",
-    registro: "CREA: 123456/D - MTE SST",
-    cargo: "Engenheiro de Segurança do Trabalho",
-    perfil: "admin",
-    senha: "admin",
-    ativo: true,
-    criadoEm: "10/01/2026",
-  },
-  {
-    id: "usr-inspetor-1",
-    nome: "Mariana Souza Lima",
-    email: "mariana.tst@consultoriasst.com.br",
-    registro: "Reg. MTE: 009876/SP",
-    cargo: "Técnica em Segurança do Trabalho",
-    perfil: "inspetor",
-    senha: "123",
-    ativo: true,
-    criadoEm: "15/02/2026",
-  },
-  {
-    id: "usr-inspetor-2",
-    nome: "Dr. Marcos Vinicius Alencar",
-    email: "perito.alencar@trt.jus.br",
-    registro: "CREA/SP: 543210 - Perito Judicial",
-    cargo: "Perito Judicial do Trabalho",
-    perfil: "inspetor",
-    senha: "123",
-    ativo: true,
-    criadoEm: "01/03/2026",
-  },
-];
+export const USUARIO_ADMIN_RAUL: UsuarioAuditor = {
+  id: "usr-admin-raul",
+  nome: "Raul Luiz de Faria",
+  email: "fariaraul77@gmail.com",
+  registro: "MTE 61658/MG",
+  cargo: "Técnico em Segurança do Trabalho",
+  perfil: "admin",
+  senha: "Portal2012",
+  ativo: true,
+  primeiroAcesso: false,
+  criadoEm: "18/09/2026",
+};
+
+export const USUARIOS_PADRAO: UsuarioAuditor[] = [USUARIO_ADMIN_RAUL];
 
 export function getUsuarios(): UsuarioAuditor[] {
   try {
@@ -53,7 +32,47 @@ export function getUsuarios(): UsuarioAuditor[] {
       localStorage.setItem(STORAGE_KEYS.USUARIOS, JSON.stringify(USUARIOS_PADRAO));
       return USUARIOS_PADRAO;
     }
-    return JSON.parse(raw);
+    const parsed: UsuarioAuditor[] = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.setItem(STORAGE_KEYS.USUARIOS, JSON.stringify(USUARIOS_PADRAO));
+      return USUARIOS_PADRAO;
+    }
+
+    // Remove usuários de demonstração anteriores
+    const filtrados = parsed.filter(
+      (u) =>
+        u.nome !== "Eng. Roberto Vasconcelos" &&
+        u.nome !== "Mariana Souza Lima" &&
+        u.nome !== "Dr. Marcos Vinicius Alencar" &&
+        u.id !== "usr-admin-1" &&
+        u.id !== "usr-inspetor-1" &&
+        u.id !== "usr-inspetor-2"
+    );
+
+    // Garante que Raul Luiz de Faria está cadastrado como Administrador com a senha Portal2012
+    const idxRaul = filtrados.findIndex(
+      (u) =>
+        u.id === USUARIO_ADMIN_RAUL.id ||
+        u.nome.toLowerCase() === USUARIO_ADMIN_RAUL.nome.toLowerCase() ||
+        u.email.toLowerCase() === USUARIO_ADMIN_RAUL.email.toLowerCase()
+    );
+
+    if (idxRaul >= 0) {
+      filtrados[idxRaul] = {
+        ...filtrados[idxRaul],
+        nome: "Raul Luiz de Faria",
+        registro: "MTE 61658/MG",
+        cargo: "Técnico em Segurança do Trabalho",
+        perfil: "admin",
+        senha: "Portal2012",
+        ativo: true,
+      };
+    } else {
+      filtrados.unshift(USUARIO_ADMIN_RAUL);
+    }
+
+    localStorage.setItem(STORAGE_KEYS.USUARIOS, JSON.stringify(filtrados));
+    return filtrados;
   } catch {
     return USUARIOS_PADRAO;
   }
@@ -88,7 +107,19 @@ export function excluirUsuario(id: string): void {
 export function getUsuarioAutenticado(): UsuarioAuditor | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.AUTH_USER);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const user: UsuarioAuditor = JSON.parse(raw);
+    // Se a sessão atual for de algum usuário teste anterior, migra para Raul Luiz de Faria
+    if (
+      user.nome === "Eng. Roberto Vasconcelos" ||
+      user.id === "usr-admin-1" ||
+      user.id === "usr-inspetor-1" ||
+      user.id === "usr-inspetor-2"
+    ) {
+      salvarUsuarioAutenticado(USUARIO_ADMIN_RAUL);
+      return USUARIO_ADMIN_RAUL;
+    }
+    return user;
   } catch {
     return null;
   }
@@ -168,74 +199,7 @@ export function salvarEmpresa(empresa: Omit<Empresa, "id"> & { id?: string }): E
   return nova;
 }
 
-export const RASCUNHOS_PADRAO: RascunhoVistoria[] = [
-  {
-    id: "rasc-demo-parado-1",
-    empresa: "Construtora Exemplo Ltda",
-    dataAtualizacao: new Date(Date.now() - 11 * 24 * 60 * 60 * 1000).toLocaleString("pt-BR"),
-    estado: {
-      empresa: "Construtora Exemplo Ltda",
-      cnpj: "00.000.000/0001-00",
-      faixa: "26 a 50",
-      wpp: "34999990000",
-      inspetor: "Eng. Marcos Silva",
-      regInspetor: "CREA-MG 123456/D",
-      acompNome: "Carlos Silveira",
-      acompCargo: "Mestre de Obras",
-      data: new Date(Date.now() - 11 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      evidencias: [
-        {
-          id: "ev-1",
-          nr: "NR 35",
-          itemNr: "35.5.1",
-          descricao: "Trabalhador executando montagem de andaime a 4 metros de altura sem cinto tipo paraquedista e sem linha de vida ancorada.",
-          infracao: "I4",
-          tipo: "S",
-          status: "Não Conformidade",
-          prioridade: "Alta",
-          descricaoCenario: "Andaime externo do bloco B desprovido de linha de vida e guarda-corpo regulamentar.",
-          acaoCorretiva: "Interromper imediatamente os serviços em altura até instalação de pontos de ancoragem testados e fornecimento de cinto com trava-quedas.",
-          valorMin: 4500,
-          valorMax: 6850,
-          criadoEm: new Date(Date.now() - 11 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ],
-    },
-  },
-  {
-    id: "rasc-demo-recente-2",
-    empresa: "Metalúrgica & Estruturas Aliança S.A.",
-    dataAtualizacao: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toLocaleString("pt-BR"),
-    estado: {
-      empresa: "Metalúrgica & Estruturas Aliança S.A.",
-      cnpj: "12.345.678/0001-99",
-      faixa: "101 a 250",
-      wpp: "11988887777",
-      inspetor: "Eng. Marcos Silva",
-      regInspetor: "CREA-MG 123456/D",
-      acompNome: "Fernando Dias",
-      acompCargo: "Gerente Industrial",
-      data: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      evidencias: [
-        {
-          id: "ev-2",
-          nr: "NR 12",
-          itemNr: "12.38.1",
-          descricao: "Prensa mecânica sem cortina de luz e sem dispositivo bimanual de acionamento sincronizado.",
-          infracao: "I3",
-          tipo: "S",
-          status: "Não Conformidade",
-          prioridade: "Alta",
-          descricaoCenario: "Zona de prensagem acessível sem proteções fixas ou intertravadas.",
-          acaoCorretiva: "Adequação dos dispositivos de parada de emergência e sensores categoria 4 conforme ABNT NBR ISO 13849.",
-          valorMin: 3200,
-          valorMax: 4520,
-          criadoEm: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      ],
-    },
-  },
-];
+export const RASCUNHOS_PADRAO: RascunhoVistoria[] = [];
 
 export function calcularDiasSemEdicao(dataAtualizacao?: string, dataEstado?: string): number {
   if (!dataAtualizacao && !dataEstado) return 0;
@@ -286,17 +250,29 @@ export function getRascunhos(): RascunhoVistoria[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.RASCUNHOS);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(RASCUNHOS_PADRAO));
-      return RASCUNHOS_PADRAO;
+      localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify([]));
+      return [];
     }
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(RASCUNHOS_PADRAO));
-      return RASCUNHOS_PADRAO;
+    if (!Array.isArray(parsed)) {
+      localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify([]));
+      return [];
     }
-    return parsed;
+    // Remove rascunhos de teste de demonstração
+    const limpos = parsed.filter(
+      (r: RascunhoVistoria) =>
+        r.id !== "rasc-demo-parado-1" &&
+        r.id !== "rasc-demo-recente-2" &&
+        !r.id.startsWith("rasc-demo") &&
+        r.empresa !== "Construtora Exemplo Ltda" &&
+        r.empresa !== "Metalúrgica & Estruturas Aliança S.A."
+    );
+    if (limpos.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(limpos));
+    }
+    return limpos;
   } catch {
-    return RASCUNHOS_PADRAO;
+    return [];
   }
 }
 
@@ -325,7 +301,20 @@ export const excluirRascunho = deletarRascunho;
 export function getLaudos(): LaudoEmitido[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.LAUDOS);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Remove laudos de teste caso existam
+    const limpos = parsed.filter(
+      (l: LaudoEmitido) =>
+        !l.id.startsWith("laudo-demo") &&
+        l.empresa !== "Construtora Exemplo Ltda" &&
+        l.empresa !== "Metalúrgica & Estruturas Aliança S.A."
+    );
+    if (limpos.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify(limpos));
+    }
+    return limpos;
   } catch {
     return [];
   }

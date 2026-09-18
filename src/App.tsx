@@ -39,8 +39,8 @@ const INITIAL_STATE: VistoriaState = {
   cnpj: "",
   faixa: "26 a 50",
   wpp: "",
-  inspetor: "Eng. Roberto Vasconcelos",
-  regInspetor: "CREA: 123456/D - MTE SST",
+  inspetor: "Raul Luiz de Faria",
+  regInspetor: "MTE 61658/MG",
   acompNome: "",
   acompCargo: "",
   data: new Date().toLocaleDateString("pt-BR"),
@@ -160,8 +160,8 @@ export function App() {
   const handleIniciarNovaInspecao = () => {
     setState({
       ...INITIAL_STATE,
-      inspetor: usuario?.nome || "Eng. Roberto Vasconcelos",
-      regInspetor: usuario?.registro || "CREA: 123456/D - MTE SST",
+      inspetor: usuario?.nome || "Raul Luiz de Faria",
+      regInspetor: usuario?.registro || "MTE 61658/MG",
       data: new Date().toLocaleDateString("pt-BR"),
     });
     setCurrentStep(1);

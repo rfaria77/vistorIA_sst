@@ -19,7 +19,7 @@ interface LoginScreenProps {
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [usuariosCadastrados, setUsuariosCadastrados] = useState<UsuarioAuditor[]>([]);
-  const [usuarioSelecionadoId, setUsuarioSelecionadoId] = useState<string>("usr-admin-1");
+  const [usuarioSelecionadoId, setUsuarioSelecionadoId] = useState<string>("usr-admin-raul");
   const [senha, setSenha] = useState("");
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -212,8 +212,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
                 <span>Senha de Acesso</span>
                 {usuarioSelecionado && (
-                  <span className="text-[10px] text-slate-500">
-                    {usuarioSelecionado.perfil === "admin" ? "Senha: admin" : "Senha: 123"}
+                  <span className="text-[10px] text-slate-400">
+                    {usuarioSelecionado.nome === "Raul Luiz de Faria" ? "Senha: Portal2012" : (usuarioSelecionado.senha ? "Credencial cadastrada" : "")}
                   </span>
                 )}
               </label>
