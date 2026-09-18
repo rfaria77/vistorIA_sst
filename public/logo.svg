@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 250" width="920" height="250">
+  <!-- Icon on Left (scaled to fit ~210x210 at x=20, y=20) -->
+  <g transform="translate(20, 20) scale(0.41)">
+    <rect width="512" height="512" rx="115" fill="#131a29"/>
+    <path d="M 256 95
+             L 395 122
+             L 395 252
+             C 395 315 330 368 256 392
+             C 182 368 117 315 117 252
+             L 117 122
+             Z"
+          fill="none"
+          stroke="#2563eb"
+          stroke-width="18"
+          stroke-linejoin="round"
+          stroke-linecap="round"/>
+    <path d="M 190 200 L 245 305 L 218 320 L 165 212 Z" fill="#10b981"/>
+    <path d="M 235 308 L 326 182 L 346 195 L 253 323 Z" fill="#38bdf8"/>
+    <circle cx="338" cy="180" r="21" fill="#ffffff"/>
+  </g>
+
+  <!-- Typography on Right -->
+  <!-- "Vistor" in dark navy -->
+  <text x="270" y="128" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="88" font-weight="900" fill="#0f172a" letter-spacing="-1">Vistor</text>
+  
+  <!-- "IA" in vibrant royal blue -->
+  <text x="532" y="128" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="88" font-weight="900" fill="#2563eb" letter-spacing="-1">IA</text>
+
+  <!-- "SST" badge -->
+  <rect x="648" y="70" width="102" height="54" rx="14" fill="#059669"/>
+  <text x="699" y="108" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="30" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">SST</text>
+
+  <!-- Subtitle: AUDITORIA PERICIAL & RISCOS NR 28 -->
+  <text x="272" y="174" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="25" font-weight="700" fill="#475569" letter-spacing="4">AUDITORIA PERICIAL &amp; RISCOS NR 28</text>
+</svg>

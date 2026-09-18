@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="115" fill="#131a29"/>
+  <!-- Shield Outline -->
+  <path d="M 256 95
+           L 395 122
+           L 395 252
+           C 395 315 330 368 256 392
+           C 182 368 117 315 117 252
+           L 117 122
+           Z"
+        fill="none"
+        stroke="#2563eb"
+        stroke-width="18"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+  
+  <!-- Checkmark Left Arm (Green) -->
+  <path d="M 190 200
+           L 245 305
+           L 218 320
+           L 165 212
+           Z"
+        fill="#10b981"/>
+
+  <!-- Checkmark Right Arm (Sky Blue / Cyan) -->
+  <path d="M 235 308
+           L 326 182
+           L 346 195
+           L 253 323
+           Z"
+        fill="#38bdf8"/>
+
+  <!-- Tip Circle (White) -->
+  <circle cx="338" cy="180" r="21" fill="#ffffff"/>
+</svg>
