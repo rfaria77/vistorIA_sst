@@ -1,0 +1,146 @@
+{
+  "entities": {
+    "UsuarioAuditor": {
+      "title": "UsuarioAuditor",
+      "description": "Auditor ou Administrador com permissões de acesso ao sistema de vistorias",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nome": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "registro": { "type": "string" },
+        "cargo": { "type": "string" },
+        "perfil": { "type": "string", "enum": ["admin", "inspetor"] },
+        "senha": { "type": "string" },
+        "ativo": { "type": "boolean" },
+        "primeiroAcesso": { "type": "boolean" },
+        "criadoEm": { "type": "string" }
+      },
+      "required": ["id", "nome", "email", "perfil", "senha", "ativo"]
+    },
+    "Empresa": {
+      "title": "Empresa",
+      "description": "Cadastro de empresa auditada para emissão de vistorias",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "nome": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "faixaFuncionarios": { "type": "string" },
+        "contatoWpp": { "type": "string" },
+        "endereco": { "type": "string" },
+        "cnae": { "type": "string" },
+        "grauRisco": { "type": "number" }
+      },
+      "required": ["id", "nome"]
+    },
+    "RascunhoVistoria": {
+      "title": "RascunhoVistoria",
+      "description": "Vistoria em andamento antes da finalização com assinaturas",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "empresa": { "type": "string" },
+        "dataCriacao": { "type": "string" },
+        "dataAtualizacao": { "type": "string" },
+        "autor": { "type": "string" },
+        "totalNaoConformidades": { "type": "number" },
+        "passivoEstimado": { "type": "number" }
+      },
+      "required": ["id", "empresa", "dataAtualizacao"]
+    },
+    "LaudoEmitido": {
+      "title": "LaudoEmitido",
+      "description": "Laudo técnico pericial de SST oficial e assinado digitalmente",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "numero": { "type": "string" },
+        "empresa": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "data": { "type": "string" },
+        "inspetor": { "type": "string" },
+        "regInspetor": { "type": "string" },
+        "acompNome": { "type": "string" },
+        "acompCargo": { "type": "string" },
+        "totalItens": { "type": "number" },
+        "totalNaoConformidades": { "type": "number" },
+        "passivoRiscoMax": { "type": "number" },
+        "economiaEstimada": { "type": "number" },
+        "hashIntegridade": { "type": "string" },
+        "carimboTempo": { "type": "string" },
+        "mostrarMultas": { "type": "boolean" },
+        "publicoAlvo": { "type": "string" }
+      },
+      "required": ["id", "numero", "empresa", "data", "inspetor", "hashIntegridade"]
+    },
+    "ProgramacaoRelatorio": {
+      "title": "ProgramacaoRelatorio",
+      "description": "Cronograma e agenda periódica de relatórios e vistorias por empresa",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "empresaNome": { "type": "string" },
+        "tipoRelatorio": { "type": "string" },
+        "periodicidade": { "type": "string", "enum": ["semanal", "quinzenal", "mensal", "semestral", "anual", "eventual"] },
+        "dataUltimoRelatorio": { "type": "string" },
+        "idUltimoLaudo": { "type": "string" },
+        "dataProximaProgramada": { "type": "string" },
+        "auditorResponsavel": { "type": "string" },
+        "observacoes": { "type": "string" },
+        "concluidoEm": { "type": "string" },
+        "criadoEm": { "type": "string" },
+        "atualizadoEm": { "type": "string" }
+      },
+      "required": ["id", "empresaNome", "tipoRelatorio", "periodicidade"]
+    },
+    "SessaoAssinatura": {
+      "title": "SessaoAssinatura",
+      "description": "Sessão temporária para captura de assinatura digital remota do acompanhante via QR Code",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "empresa": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "data": { "type": "string" },
+        "inspetor": { "type": "string" },
+        "regInspetor": { "type": "string" },
+        "acompNome": { "type": "string" },
+        "acompCargo": { "type": "string" },
+        "totalApontamentos": { "type": "number" },
+        "status": { "type": "string", "enum": ["pendente", "assinado", "cancelado"] },
+        "assinaturaAcompanhante": { "type": "string" },
+        "assinadoEm": { "type": "string" },
+        "criadoEm": { "type": "string" },
+        "atualizadoEm": { "type": "string" }
+      },
+      "required": ["id", "empresa", "inspetor", "status", "criadoEm"]
+    }
+  },
+  "firestore": {
+    "/usuarios/{usuarioId}": {
+      "schema": "UsuarioAuditor",
+      "description": "Armazena os perfis de auditores e administradores do sistema"
+    },
+    "/empresas/{empresaId}": {
+      "schema": "Empresa",
+      "description": "Armazena o cadastro compartilhado de empresas para vistorias"
+    },
+    "/rascunhos/{rascunhoId}": {
+      "schema": "RascunhoVistoria",
+      "description": "Vistorias em andamento salvas na nuvem para não perder apontamentos"
+    },
+    "/laudos/{laudoId}": {
+      "schema": "LaudoEmitido",
+      "description": "Laudos técnicos periciais finalizados e assinados para consulta e download"
+    },
+    "/programacoes/{programacaoId}": {
+      "schema": "ProgramacaoRelatorio",
+      "description": "Programações periódicas de vistorias com controle de prazos e atrasos"
+    },
+    "/sessoesAssinatura/{sessaoId}": {
+      "schema": "SessaoAssinatura",
+      "description": "Sessões ativas de assinatura remota por QR Code sem contato com o aparelho do auditor"
+    }
+  }
+}

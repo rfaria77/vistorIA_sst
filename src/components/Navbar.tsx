@@ -1,5 +1,5 @@
 import React from "react";
-import { ShieldAlert, Settings, Plus, Sparkles, Building2, CheckCircle2, ArrowLeft, LayoutGrid } from "lucide-react";
+import { ShieldAlert, Settings, Plus, Sparkles, Building2, CheckCircle2, ArrowLeft, LayoutGrid, BarChart3, CalendarDays } from "lucide-react";
 import { PWAInstallButton } from "./PWAInstallButton";
 
 interface NavbarProps {
@@ -9,6 +9,8 @@ interface NavbarProps {
   onOpenAdmin: () => void;
   onNovaVistoria: () => void;
   onVoltarHub?: () => void;
+  onAbrirDashboard?: () => void;
+  onAbrirProgramacao?: () => void;
   isAdmin?: boolean;
 }
 
@@ -19,6 +21,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAdmin,
   onNovaVistoria,
   onVoltarHub,
+  onAbrirDashboard,
+  onAbrirProgramacao,
   isAdmin = false,
 }) => {
   return (
@@ -71,11 +75,37 @@ export const Navbar: React.FC<NavbarProps> = ({
                 type="button"
                 id="btn-nav-hub"
                 onClick={onVoltarHub}
-                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1 border border-slate-700 transition-colors"
+                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1 border border-slate-700 transition-colors cursor-pointer"
                 title="Painel de Inspeções"
               >
                 <LayoutGrid className="w-3.5 h-3.5 text-sky-400" />
                 <span className="hidden sm:inline">Painel</span>
+              </button>
+            )}
+
+            {onAbrirDashboard && (
+              <button
+                type="button"
+                id="btn-nav-dashboard"
+                onClick={onAbrirDashboard}
+                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1 border border-slate-700 transition-colors cursor-pointer"
+                title="Abrir Dashboard de Gestão"
+              >
+                <BarChart3 className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </button>
+            )}
+
+            {onAbrirProgramacao && (
+              <button
+                type="button"
+                id="btn-nav-programacao"
+                onClick={onAbrirProgramacao}
+                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white rounded-lg text-xs font-bold flex items-center gap-1 border border-slate-700 transition-colors cursor-pointer"
+                title="Programação de Relatórios por Empresa"
+              >
+                <CalendarDays className="w-3.5 h-3.5 text-sky-400" />
+                <span className="hidden sm:inline">Programação</span>
               </button>
             )}
 

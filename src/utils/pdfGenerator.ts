@@ -7,10 +7,12 @@ export interface PDFGenerationOptions {
   logoBase64?: string | null;
   assinaturaInspetor?: string | null;
   assinaturaAcompanhante?: string | null;
+  mostrarMultas?: boolean;
 }
 
 export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Promise<Blob> {
   const { estado, logoBase64, assinaturaInspetor, assinaturaAcompanhante } = options;
+  const mostrarMultas = options.mostrarMultas !== undefined ? options.mostrarMultas : (estado.mostrarMultas !== false);
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -68,17 +70,25 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
   }
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
+  doc.setFontSize(11);
   doc.setTextColor(255, 255, 255);
-  doc.text("RELATÓRIO PERICIAL DE VISTORIA & CONFORMIDADES SST", textStartX, currentY + 9);
+  doc.text(
+    mostrarMultas
+      ? "RELATÓRIO PERICIAL DE VISTORIA & GESTÃO SST (EXECUTIVO / GESTORES)"
+      : "RELATÓRIO OPERACIONAL DE SEGURANÇA & PREVENÇÃO (LÍDERES DE SETOR)",
+    textStartX,
+    currentY + 8.5
+  );
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
+  doc.setFontSize(7.5);
   doc.setTextColor(203, 213, 225);
   doc.text(
-    "Auditoria Pericial em Segurança e Saúde no Trabalho | Enquadramento e Multas NR 28",
+    mostrarMultas
+      ? "Auditoria Pericial em Segurança e Saúde no Trabalho | Diagnóstico Financeiro & Penalidades NR 28"
+      : "Auditoria Operacional em Segurança e Saúde no Trabalho | Foco em Prevenção, Campo & Plano 5W2H",
     textStartX,
-    currentY + 16
+    currentY + 15
   );
 
   currentY += bannerHeight + 5;
@@ -213,35 +223,60 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
 
   const cardW = (contentWidth - 4) / 2;
 
-  // Card Passivo em Risco
-  doc.setFillColor(254, 242, 242);
-  doc.setDrawColor(252, 165, 165);
-  doc.roundedRect(margin, currentY, cardW, 17, 2, 2, "FD");
+  if (mostrarMultas) {
+    // Card Passivo em Risco (Gestores)
+    doc.setFillColor(254, 242, 242);
+    doc.setDrawColor(252, 165, 165);
+    doc.roundedRect(margin, currentY, cardW, 17, 2, 2, "FD");
 
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(185, 28, 28);
-  doc.text("PASSIVO EM RISCO FISCAL ESTIMADO (NR 28)", margin + 4, currentY + 5.5);
-  doc.setFontSize(10.5);
-  doc.text(`${formatarBRL(passivoMin)} a ${formatarBRL(passivoMax)}`, margin + 4, currentY + 12.5);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(185, 28, 28);
+    doc.text("PASSIVO EM RISCO FISCAL ESTIMADO (NR 28)", margin + 4, currentY + 5.5);
+    doc.setFontSize(10.5);
+    doc.text(`${formatarBRL(passivoMin)} a ${formatarBRL(passivoMax)}`, margin + 4, currentY + 12.5);
 
-  // Card Economia Gerada
-  doc.setFillColor(240, 253, 244);
-  doc.setDrawColor(134, 239, 172);
-  doc.roundedRect(margin + cardW + 4, currentY, cardW, 17, 2, 2, "FD");
+    // Card Economia Gerada (Gestores)
+    doc.setFillColor(240, 253, 244);
+    doc.setDrawColor(134, 239, 172);
+    doc.roundedRect(margin + cardW + 4, currentY, cardW, 17, 2, 2, "FD");
 
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(21, 128, 61);
-  doc.text("ECONOMIA GERADA / RISCO EVITADO (BOAS PRÁTICAS)", margin + cardW + 8, currentY + 5.5);
-  doc.setFontSize(10.5);
-  doc.text(`${formatarBRL(econMin)} a ${formatarBRL(econMax)}`, margin + cardW + 8, currentY + 12.5);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(21, 128, 61);
+    doc.text("ECONOMIA GERADA / RISCO EVITADO (BOAS PRÁTICAS)", margin + cardW + 8, currentY + 5.5);
+    doc.setFontSize(10.5);
+    doc.text(`${formatarBRL(econMin)} a ${formatarBRL(econMax)}`, margin + cardW + 8, currentY + 12.5);
+  } else {
+    // Card Não Conformidades Críticas (Líderes de Setor - Sem Valores Financeiros)
+    doc.setFillColor(254, 242, 242);
+    doc.setDrawColor(252, 165, 165);
+    doc.roundedRect(margin, currentY, cardW, 17, 2, 2, "FD");
+
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(185, 28, 28);
+    doc.text("NÃO CONFORMIDADES A CORRIGIR (CHÃO DE FÁBRICA)", margin + 4, currentY + 5.5);
+    doc.setFontSize(10);
+    doc.text(`${totalNC} APONTAMENTO(S) IRREGULARES`, margin + 4, currentY + 12.5);
+
+    // Card Boas Práticas (Líderes de Setor)
+    doc.setFillColor(240, 253, 244);
+    doc.setDrawColor(134, 239, 172);
+    doc.roundedRect(margin + cardW + 4, currentY, cardW, 17, 2, 2, "FD");
+
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(21, 128, 61);
+    doc.text("BOAS PRÁTICAS & CONFORMIDADES REGISTRADAS", margin + cardW + 8, currentY + 5.5);
+    doc.setFontSize(10);
+    doc.text(`${totalConf} ITEM(NS) CONFORMES MANTIDOS`, margin + cardW + 8, currentY + 12.5);
+  }
 
   currentY += 22;
 
   // ==========================================
-  // 4. PAINEL GRÁFICO DA MULTA & RISCO NR 28
-  // (NOVO: Gráficos de barras comparativas, distribuição por NR e matriz de severidade)
+  // 4. PAINEL GRÁFICO DA AUDITORIA (GESTORES OU LÍDERES)
   // ==========================================
   checkPageBreak(58);
 
@@ -257,7 +292,13 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7.5);
   doc.setTextColor(15, 23, 42);
-  doc.text("DIAGNÓSTICO GRÁFICO DE MULTAS E EXPOSIÇÃO FINANCEIRA (NR 28)", margin + 4, currentY + 5);
+  doc.text(
+    mostrarMultas
+      ? "DIAGNÓSTICO GRÁFICO DE MULTAS E EXPOSIÇÃO FINANCEIRA (NR 28)"
+      : "DIAGNÓSTICO GRÁFICO OPERACIONAL DE SEGURANÇA & DISTRIBUIÇÃO POR NR (LÍDERES)",
+    margin + 4,
+    currentY + 5
+  );
 
   const innerChartY = currentY + 10;
   const leftColW = 86;
@@ -268,45 +309,86 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
   doc.setDrawColor(226, 232, 240);
   doc.line(rightColX - 3, innerChartY, rightColX - 3, currentY + graficosBoxH - 3);
 
-  // --- SUB-GRÁFICO 1 (ESQUERDA): Balanço Passivo vs Economia ---
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.setTextColor(71, 85, 105);
-  doc.text("Balanço Financeiro Proporcional:", margin + 4, innerChartY + 2);
+  if (mostrarMultas) {
+    // --- SUB-GRÁFICO 1 (ESQUERDA - GESTORES): Balanço Passivo vs Economia ---
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Balanço Financeiro Proporcional:", margin + 4, innerChartY + 2);
 
-  const totalFinanceiro = (passivoMax + econMax) || 1;
-  const pctPassivo = Math.min(100, Math.round((passivoMax / totalFinanceiro) * 100));
-  const pctEcon = 100 - pctPassivo;
+    const totalFinanceiro = (passivoMax + econMax) || 1;
+    const pctPassivo = Math.min(100, Math.round((passivoMax / totalFinanceiro) * 100));
+    const pctEcon = 100 - pctPassivo;
 
-  const barTrackW = leftColW - 8;
-  const barY = innerChartY + 6;
+    const barTrackW = leftColW - 8;
+    const barY = innerChartY + 6;
 
-  // Barra de Passivo (Vermelha)
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.setTextColor(185, 28, 28);
-  doc.text(`Passivo em Risco: ${formatarBRL(passivoMax)} (${pctPassivo}%)`, margin + 4, barY + 3);
+    // Barra de Passivo (Vermelha)
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(185, 28, 28);
+    doc.text(`Passivo em Risco: ${formatarBRL(passivoMax)} (${pctPassivo}%)`, margin + 4, barY + 3);
 
-  doc.setFillColor(254, 226, 226); // trilho fundo
-  doc.roundedRect(margin + 4, barY + 5, barTrackW, 5.5, 1, 1, "F");
-  const fillPassivoW = Math.max(2, (barTrackW * pctPassivo) / 100);
-  doc.setFillColor(220, 38, 38); // vermelho vivo
-  doc.roundedRect(margin + 4, barY + 5, fillPassivoW, 5.5, 1, 1, "F");
+    doc.setFillColor(254, 226, 226);
+    doc.roundedRect(margin + 4, barY + 5, barTrackW, 5.5, 1, 1, "F");
+    const fillPassivoW = Math.max(2, (barTrackW * pctPassivo) / 100);
+    doc.setFillColor(220, 38, 38);
+    doc.roundedRect(margin + 4, barY + 5, fillPassivoW, 5.5, 1, 1, "F");
 
-  // Barra de Economia (Verde)
-  const bar2Y = barY + 14;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.setTextColor(21, 128, 61);
-  doc.text(`Economia c/ Boas Práticas: ${formatarBRL(econMax)} (${pctEcon}%)`, margin + 4, bar2Y + 3);
+    // Barra de Economia (Verde)
+    const bar2Y = barY + 14;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(21, 128, 61);
+    doc.text(`Economia c/ Boas Práticas: ${formatarBRL(econMax)} (${pctEcon}%)`, margin + 4, bar2Y + 3);
 
-  doc.setFillColor(220, 252, 231); // trilho fundo
-  doc.roundedRect(margin + 4, bar2Y + 5, barTrackW, 5.5, 1, 1, "F");
-  const fillEconW = Math.max(2, (barTrackW * pctEcon) / 100);
-  doc.setFillColor(22, 163, 74); // verde vivo
-  doc.roundedRect(margin + 4, bar2Y + 5, fillEconW, 5.5, 1, 1, "F");
+    doc.setFillColor(220, 252, 231);
+    doc.roundedRect(margin + 4, bar2Y + 5, barTrackW, 5.5, 1, 1, "F");
+    const fillEconW = Math.max(2, (barTrackW * pctEcon) / 100);
+    doc.setFillColor(22, 163, 74);
+    doc.roundedRect(margin + 4, bar2Y + 5, fillEconW, 5.5, 1, 1, "F");
+  } else {
+    // --- SUB-GRÁFICO 1 (ESQUERDA - LÍDERES): Balanço de Itens de Segurança ---
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Balanço Operacional de Apontamentos:", margin + 4, innerChartY + 2);
 
-  // Indicador de Severidade por Grau (I1 a I4)
+    const totalGeral = estado.evidencias.length || 1;
+    const pctNC = Math.min(100, Math.round((totalNC / totalGeral) * 100));
+    const pctConf = 100 - pctNC;
+
+    const barTrackW = leftColW - 8;
+    const barY = innerChartY + 6;
+
+    // Barra de Não Conformidades (Vermelha)
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(185, 28, 28);
+    doc.text(`Não Conformidades a Corrigir: ${totalNC} (${pctNC}%)`, margin + 4, barY + 3);
+
+    doc.setFillColor(254, 226, 226);
+    doc.roundedRect(margin + 4, barY + 5, barTrackW, 5.5, 1, 1, "F");
+    const fillNCW = Math.max(2, (barTrackW * pctNC) / 100);
+    doc.setFillColor(220, 38, 38);
+    doc.roundedRect(margin + 4, barY + 5, fillNCW, 5.5, 1, 1, "F");
+
+    // Barra de Conformidades (Verde)
+    const bar2Y = barY + 14;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(21, 128, 61);
+    doc.text(`Boas Práticas Mantidas: ${totalConf} (${pctConf}%)`, margin + 4, bar2Y + 3);
+
+    doc.setFillColor(220, 252, 231);
+    doc.roundedRect(margin + 4, bar2Y + 5, barTrackW, 5.5, 1, 1, "F");
+    const fillConfW = Math.max(2, (barTrackW * pctConf) / 100);
+    doc.setFillColor(22, 163, 74);
+    doc.roundedRect(margin + 4, bar2Y + 5, fillConfW, 5.5, 1, 1, "F");
+  }
+
+  // Indicador de Severidade por Grau (I1 a I4) - Comum a ambos os perfis
+  const bar2Y = innerChartY + 6 + 14;
   const matrizY = bar2Y + 14;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(6.5);
@@ -315,7 +397,8 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
 
   const graus: GrauInfracao[] = ["I1", "I2", "I3", "I4"];
   const grauLabels = { I1: "I1 (Leve)", I2: "I2 (Média)", I3: "I3 (Grave)", I4: "I4 (Crítico)" };
-  const grauW = (barTrackW - 6) / 4;
+  const barTrackWConst = leftColW - 8;
+  const grauW = (barTrackWConst - 6) / 4;
 
   graus.forEach((g, idx) => {
     const gx = margin + 4 + idx * (grauW + 2);
@@ -335,13 +418,17 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
     doc.text(`${count} itens`, gx + grauW / 2, matrizY + 7.5, { align: "center" });
   });
 
-  // --- SUB-GRÁFICO 2 (DIREITA): Passivo por Norma Regulamentadora (NR) ---
+  // --- SUB-GRÁFICO 2 (DIREITA): Passivo (Gestores) ou Ocorrências (Líderes) por NR ---
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7);
   doc.setTextColor(71, 85, 105);
-  doc.text("Passivo Financeiro por NR Auditada:", rightColX, innerChartY + 2);
+  doc.text(
+    mostrarMultas ? "Passivo Financeiro por NR Auditada:" : "Ocorrências Registradas por NR Auditada:",
+    rightColX,
+    innerChartY + 2
+  );
 
-  // Agrupar passivo por NR
+  // Agrupar passivo e contagem por NR
   const nrMap: Record<string, { passivo: number; itens: number }> = {};
   estado.evidencias.forEach((ev) => {
     if (ev.status === "Não Conformidade") {
@@ -353,22 +440,25 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
 
   const nrList = Object.entries(nrMap)
     .map(([nr, dados]) => ({ nr, ...dados }))
-    .sort((a, b) => b.passivo - a.passivo);
+    .sort((a, b) => (mostrarMultas ? b.passivo - a.passivo : b.itens - a.itens));
 
   if (nrList.length === 0) {
     doc.setFont("helvetica", "italic");
     doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
-    doc.text("Nenhuma não conformidade com penalidade financeira registrada.", rightColX, innerChartY + 12);
+    doc.text("Nenhuma não conformidade registrada nesta auditoria.", rightColX, innerChartY + 12);
   } else {
-    const maxNrPassivo = Math.max(...nrList.map((n) => n.passivo), 1);
+    const maxVal = mostrarMultas
+      ? Math.max(...nrList.map((n) => n.passivo), 1)
+      : Math.max(...nrList.map((n) => n.itens), 1);
     const maxBars = Math.min(4, nrList.length);
 
     for (let b = 0; b < maxBars; b++) {
       const itemNr = nrList[b];
       const by = innerChartY + 7 + b * 9.5;
-      const barRatio = Math.max(0.08, itemNr.passivo / maxNrPassivo);
-      const nrBarW = (rightColW - 32) * barRatio;
+      const currentVal = mostrarMultas ? itemNr.passivo : itemNr.itens;
+      const barRatio = Math.max(0.08, currentVal / maxVal);
+      const nrBarW = (rightColW - 36) * barRatio;
 
       doc.setFont("helvetica", "bold");
       doc.setFontSize(6.8);
@@ -377,15 +467,18 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
 
       // Barra
       doc.setFillColor(241, 245, 249);
-      doc.roundedRect(rightColX + 13, by, rightColW - 38, 4.5, 1, 1, "F");
+      doc.roundedRect(rightColX + 13, by, rightColW - 42, 4.5, 1, 1, "F");
       doc.setFillColor(239, 68, 68);
       doc.roundedRect(rightColX + 13, by, nrBarW, 4.5, 1, 1, "F");
 
-      // Valor formatado
+      // Rótulo numérico
       doc.setFont("helvetica", "bold");
       doc.setFontSize(6.2);
       doc.setTextColor(185, 28, 28);
-      doc.text(`${formatarBRL(itemNr.passivo)}`, rightColX + rightColW - 2, by + 3.2, { align: "right" });
+      const rotuloDireita = mostrarMultas
+        ? `${formatarBRL(itemNr.passivo)}`
+        : `${itemNr.itens} item(ns)`;
+      doc.text(rotuloDireita, rightColX + rightColW - 2, by + 3.2, { align: "right" });
     }
   }
 
@@ -462,15 +555,25 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
     doc.text(acaoLines, margin + 28, textY);
     textY += Math.max(4.5, acaoLines.length * 3.5);
 
-    // Valor da Multa
+    // Valor da Multa (Gestores) ou Enquadramento Técnico (Líderes)
     doc.setFont("helvetica", "bold");
-    doc.text("Impacto NR 28:", margin + 4, textY);
-    doc.setTextColor(isNC ? 185 : 21, isNC ? 28 : 128, isNC ? 28 : 61);
-    doc.text(
-      `${formatarBRL(ev.valorMin)} a ${formatarBRL(ev.valorMax)} ${isNC ? "(Risco de Penalidade Fiscal)" : "(Economia com Proteção)"}`,
-      margin + 28,
-      textY
-    );
+    if (mostrarMultas) {
+      doc.text("Impacto NR 28:", margin + 4, textY);
+      doc.setTextColor(isNC ? 185 : 21, isNC ? 28 : 128, isNC ? 28 : 61);
+      doc.text(
+        `${formatarBRL(ev.valorMin)} a ${formatarBRL(ev.valorMax)} ${isNC ? "(Risco de Penalidade Fiscal)" : "(Economia com Proteção)"}`,
+        margin + 28,
+        textY
+      );
+    } else {
+      doc.text("Severidade SST:", margin + 4, textY);
+      doc.setTextColor(isNC ? 185 : 21, isNC ? 28 : 128, isNC ? 28 : 61);
+      doc.text(
+        `Infração Grau ${ev.infracao} (${ev.tipo === "M" ? "Medicina" : "Segurança do Trabalho"}) • Prioridade ${ev.prioridade} ${isNC ? "[Ação Corretiva Exigida no Plano 5W2H]" : "[Padrão Conforme]"}` ,
+        margin + 28,
+        textY
+      );
+    }
     textY += 4.5;
 
     // Evidência Fotográfica com carimbo pericial

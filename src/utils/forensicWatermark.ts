@@ -3,18 +3,43 @@ export interface ForensicStampOptions {
   lng?: number | null;
   auditorNome?: string;
   empresaNome?: string;
+  maxDim?: number; // padrão 1280px
+  qualidade?: number; // padrão 0.80 (80%)
+}
+
+export interface ResultadoOtimizacaoFoto {
+  dataUrl: string;
+  largura: number;
+  altura: number;
+  tamanhoOriginalKb?: number;
+  tamanhoFinalKb: number;
+  reducaoPercentual?: number;
 }
 
 export async function aplicarCarimboForense(
   fileOrDataUrl: File | string,
   options: ForensicStampOptions = {}
 ): Promise<string> {
+  const res = await processarEOtimizarFoto(fileOrDataUrl, options);
+  return res.dataUrl;
+}
+
+export async function processarEOtimizarFoto(
+  fileOrDataUrl: File | string,
+  options: ForensicStampOptions = {}
+): Promise<ResultadoOtimizacaoFoto> {
   return new Promise((resolve, reject) => {
+    let tamanhoOriginalBytes = 0;
+    if (fileOrDataUrl instanceof File) {
+      tamanhoOriginalBytes = fileOrDataUrl.size;
+    }
+
     const img = new Image();
 
     img.onload = () => {
-      // Calculate responsive dimensions (max width/height 1280px for high quality & low memory)
-      const MAX_DIM = 1280;
+      // Redimensionamento inteligente no navegador para até 1280px (preservando aspecto e nitidez pericial)
+      const MAX_DIM = options.maxDim || 1280;
+      const QUALIDADE = options.qualidade ?? 0.80; // JPEG 80%
       let width = img.width;
       let height = img.height;
 
@@ -40,22 +65,22 @@ export async function aplicarCarimboForense(
         return;
       }
 
-      // Draw original image
+      // Desenha imagem redimensionada
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Height of forensic bar proportional to image
-      const barHeight = Math.max(38, Math.round(height * 0.065));
+      // Faixa de Carimbo Forense proporcional
+      const barHeight = Math.max(36, Math.round(height * 0.065));
       const posY = height - barHeight;
 
-      // Dark forensic banner background
+      // Fundo escuro fosco de alta legibilidade
       ctx.fillStyle = "rgba(15, 23, 42, 0.94)";
       ctx.fillRect(0, posY, width, barHeight);
 
-      // Top cyan/gold accent line for forensic credibility
+      // Linha superior de destaque ciano pericial
       ctx.fillStyle = "#38bdf8";
       ctx.fillRect(0, posY, width, 2);
 
-      // Forensic text assembly
+      // Montagem da chancela forense com data, hora e coordenadas
       const now = new Date();
       const dataHoraStr = now.toLocaleDateString("pt-BR") + " " + now.toLocaleTimeString("pt-BR");
 
@@ -66,8 +91,8 @@ export async function aplicarCarimboForense(
 
       const textoCompleto = `REGISTRO FORENSE SST | ${dataHoraStr} | ${gpsTexto}`;
 
-      // Font styling
-      const fontSize = Math.max(13, Math.round(barHeight * 0.38));
+      // Tipografia nítida
+      const fontSize = Math.max(12, Math.round(barHeight * 0.38));
       ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
       ctx.fillStyle = "#ffffff";
       ctx.textBaseline = "middle";
@@ -75,13 +100,32 @@ export async function aplicarCarimboForense(
       const textY = posY + barHeight / 2;
       ctx.fillText(textoCompleto, 16, textY);
 
-      // Export as compressed high quality JPEG (around 120-250KB)
-      const stampedDataUrl = canvas.toDataURL("image/jpeg", 0.82);
-      resolve(stampedDataUrl);
+      // Exportação em JPEG com 80% de qualidade (reduz até 90% do peso sem perda de nitidez visual)
+      const stampedDataUrl = canvas.toDataURL("image/jpeg", QUALIDADE);
+
+      // Cálculo de métricas de compressão
+      const base64Length = stampedDataUrl.length - (stampedDataUrl.indexOf(",") + 1);
+      const tamanhoFinalBytes = Math.round(base64Length * 0.75);
+      const tamanhoFinalKb = Math.round(tamanhoFinalBytes / 1024);
+      const tamanhoOriginalKb = tamanhoOriginalBytes > 0 ? Math.round(tamanhoOriginalBytes / 1024) : undefined;
+      let reducaoPercentual: number | undefined = undefined;
+
+      if (tamanhoOriginalKb && tamanhoOriginalKb > tamanhoFinalKb) {
+        reducaoPercentual = Math.round(((tamanhoOriginalKb - tamanhoFinalKb) / tamanhoOriginalKb) * 100);
+      }
+
+      resolve({
+        dataUrl: stampedDataUrl,
+        largura: width,
+        altura: height,
+        tamanhoOriginalKb,
+        tamanhoFinalKb,
+        reducaoPercentual,
+      });
     };
 
     img.onerror = () => {
-      reject(new Error("Falha ao carregar a imagem para aplicação do carimbo"));
+      reject(new Error("Falha ao carregar a imagem para aplicação do carimbo e compressão"));
     };
 
     if (typeof fileOrDataUrl === "string") {
@@ -97,3 +141,4 @@ export async function aplicarCarimboForense(
     }
   });
 }
+

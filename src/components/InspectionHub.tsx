@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   PlusCircle,
   FileText,
@@ -22,6 +22,11 @@ import {
   ChevronRight,
   FileCheck,
   Fingerprint,
+  Briefcase,
+  Users,
+  EyeOff,
+  BarChart3,
+  CalendarDays,
 } from "lucide-react";
 import { PWAInstallButton } from "./PWAInstallButton";
 import {
@@ -37,6 +42,8 @@ import {
   getRascunhos,
   getLogoConsultoria,
   calcularDiasSemEdicao,
+  getProgramacoes,
+  calcularStatusPrazo,
 } from "../utils/storage";
 import { isBiometriaHabilitada } from "../utils/biometrics";
 import { formatarBRL } from "../data/nr28Data";
@@ -48,6 +55,8 @@ interface InspectionHubProps {
   onContinuarInspecao: (estado: VistoriaState) => void;
   onLogout: () => void;
   onAbrirAdmin?: () => void;
+  onAbrirDashboard?: () => void;
+  onAbrirProgramacao?: () => void;
   onLaudoExcluido?: () => void;
 }
 
@@ -57,10 +66,13 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
   onContinuarInspecao,
   onLogout,
   onAbrirAdmin,
+  onAbrirDashboard,
+  onAbrirProgramacao,
   onLaudoExcluido,
 }) => {
   const [rascunhos, setRascunhos] = useState<RascunhoVistoria[]>([]);
   const [laudos, setLaudos] = useState<LaudoEmitido[]>([]);
+  const [programacoes, setProgramacoes] = useState(() => getProgramacoes());
   const [termoBusca, setTermoBusca] = useState("");
   const [abaAtiva, setAbaAtiva] = useState<"todos" | "andamento" | "finalizados" | "parados">("todos");
   const [laudoVisualizando, setLaudoVisualizando] = useState<LaudoEmitido | null>(null);
@@ -70,6 +82,7 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
   const carregarDados = () => {
     setRascunhos(getRascunhos());
     setLaudos(getLaudos());
+    setProgramacoes(getProgramacoes());
   };
 
   useEffect(() => {
@@ -108,12 +121,17 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
     }
   };
 
-  const handleBaixarPdfLaudo = async (laudo: LaudoEmitido) => {
+  const handleBaixarPdfLaudo = async (laudo: LaudoEmitido, overrideMostrarMultas?: boolean) => {
     if (!laudo.estado) {
       alert("Os dados completos desta vistoria antiga não estão disponíveis para reemissão em PDF.");
       return;
     }
     try {
+      const mostrarMultas =
+        overrideMostrarMultas !== undefined
+          ? overrideMostrarMultas
+          : (laudo.mostrarMultas !== undefined ? laudo.mostrarMultas : laudo.estado.mostrarMultas !== false);
+
       setGerandoPdfId(laudo.id);
       const logo = getLogoConsultoria();
       const blob = await gerarLaudoPericialPDF({
@@ -121,13 +139,15 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
         logoBase64: logo,
         assinaturaInspetor: laudo.estado.assinaturaInspetor,
         assinaturaAcompanhante: laudo.estado.assinaturaAcompanhante,
+        mostrarMultas,
       });
 
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       const safeName = laudo.empresa.replace(/[^a-zA-Z0-9]/g, "_");
+      const sufixo = mostrarMultas ? "Gestores" : "Lideres";
       link.href = url;
-      link.download = `Laudo_SST_${safeName}_${laudo.data.replace(/\//g, "-")}.pdf`;
+      link.download = `Laudo_SST_${safeName}_${sufixo}_${laudo.data.replace(/\//g, "-")}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -150,6 +170,13 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
   });
 
   const rascunhosParados = rascunhosComDias.filter((r) => r.isParadoMaisDe7Dias);
+
+  const programacoesAtrasadas = useMemo(() => {
+    return programacoes.filter((p) => {
+      const { status } = calcularStatusPrazo(p.dataProximaProgramada, p.periodicidade);
+      return status === "atrasado";
+    });
+  }, [programacoes]);
 
   const rascunhosFiltrados = rascunhosComDias.filter((r) => {
     const matchBusca =
@@ -226,6 +253,37 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
 
             <PWAInstallButton />
 
+            {onAbrirProgramacao && (
+              <button
+                type="button"
+                id="btn-hub-programacao"
+                onClick={onAbrirProgramacao}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer relative"
+                title="Gestão de Programação e Prazos por Empresa"
+              >
+                <CalendarDays className="w-3.5 h-3.5 text-sky-400" />
+                <span className="hidden sm:inline">Programação</span>
+                {programacoesAtrasadas.length > 0 && (
+                  <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px] font-black">
+                    {programacoesAtrasadas.length}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {onAbrirDashboard && (
+              <button
+                type="button"
+                id="btn-hub-dashboard"
+                onClick={onAbrirDashboard}
+                className="px-3 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                title="Abrir Dashboard de Gestão com Gráficos por NR e Multas Recharts"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Dashboard de Gestão</span>
+              </button>
+            )}
+
             {usuario.perfil === "admin" && onAbrirAdmin && (
               <button
                 type="button"
@@ -300,17 +358,83 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
             </p>
           </div>
 
-          <button
-            type="button"
-            id="btn-iniciar-nova-inspecao"
-            onClick={onIniciarNovaInspecao}
-            className="w-full lg:w-auto px-6 py-3.5 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-extrabold text-sm rounded-2xl flex items-center justify-center gap-2.5 shadow-lg shadow-sky-950 hover:shadow-sky-800/40 transition-all cursor-pointer shrink-0"
-          >
-            <PlusCircle className="w-5 h-5" />
-            <span>Iniciar Nova Inspeção</span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto shrink-0">
+            {onAbrirProgramacao && (
+              <button
+                type="button"
+                id="btn-hero-abrir-programacao"
+                onClick={onAbrirProgramacao}
+                className="w-full sm:w-auto px-4 py-3.5 bg-slate-800/90 hover:bg-slate-700 text-sky-300 hover:text-white border border-slate-700/80 font-bold text-xs sm:text-sm rounded-2xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+              >
+                <CalendarDays className="w-4 h-4 text-sky-400" />
+                <span>Programação</span>
+                {programacoesAtrasadas.length > 0 && (
+                  <span className="px-1.5 py-0.5 bg-rose-500 text-white rounded-full text-[10px] font-black">
+                    {programacoesAtrasadas.length} atrasado{programacoesAtrasadas.length > 1 ? "s" : ""}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {onAbrirDashboard && (
+              <button
+                type="button"
+                id="btn-hero-abrir-dashboard"
+                onClick={onAbrirDashboard}
+                className="w-full sm:w-auto px-5 py-3.5 bg-slate-800/90 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700/80 font-bold text-xs sm:text-sm rounded-2xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md"
+              >
+                <BarChart3 className="w-4 h-4 text-indigo-400" />
+                <span>Dashboard de Gestão</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              id="btn-iniciar-nova-inspecao"
+              onClick={onIniciarNovaInspecao}
+              className="w-full sm:w-auto px-6 py-3.5 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-extrabold text-sm rounded-2xl flex items-center justify-center gap-2.5 shadow-lg shadow-sky-950 hover:shadow-sky-800/40 transition-all cursor-pointer"
+            >
+              <PlusCircle className="w-5 h-5" />
+              <span>Iniciar Nova Inspeção</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
+
+        {/* ALERTA DE RELATÓRIOS PERIÓDICOS ATRASADOS */}
+        {programacoesAtrasadas.length > 0 && onAbrirProgramacao && (
+          <div
+            id="alerta-relatorios-atrasados-hub"
+            className="mb-6 p-4 sm:p-5 bg-gradient-to-r from-rose-950/80 via-slate-900 to-rose-950/70 border-2 border-rose-500/80 rounded-2xl shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+          >
+            <div className="flex items-center gap-3.5">
+              <span className="p-2.5 bg-rose-500/20 text-rose-400 rounded-xl shrink-0 border border-rose-500/40">
+                <AlertTriangle className="w-6 h-6 text-rose-400 animate-pulse" />
+              </span>
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
+                  <span>
+                    {programacoesAtrasadas.length} Relatório
+                    {programacoesAtrasadas.length > 1 ? "s" : ""} Periódico
+                    {programacoesAtrasadas.length > 1 ? "s" : ""} com Prazo Vencido!
+                  </span>
+                </h3>
+                <p className="text-xs text-rose-200/90 mt-0.5">
+                  Existem rotinas periódicas (semanal, quinzenal, mensal, semestral ou anual) que ultrapassaram a data prevista. Regularize para garantir conformidade legal das empresas.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onAbrirProgramacao}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md shrink-0 cursor-pointer self-stretch sm:self-auto justify-center"
+            >
+              <span>Ver Programação & Regularizar</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* ALERTA VISUAL DE VISTORIAS PARADAS (+7 DIAS SEM EDIÇÃO) */}
         {rascunhosParados.length > 0 && (
@@ -665,10 +789,31 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
 
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-3">
-                        <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                          <Lock className="w-3 h-3 text-emerald-400" />
-                          FINALIZADA &amp; ASSINADA
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-emerald-400" />
+                            FINALIZADA &amp; ASSINADA
+                          </span>
+                          <span
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded border flex items-center gap-1 ${
+                              laudo.mostrarMultas === false
+                                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                : "bg-sky-500/20 text-sky-300 border-sky-500/40"
+                            }`}
+                          >
+                            {laudo.mostrarMultas === false ? (
+                              <>
+                                <Users className="w-2.5 h-2.5" />
+                                Líderes (Sem Multas)
+                              </>
+                            ) : (
+                              <>
+                                <Briefcase className="w-2.5 h-2.5" />
+                                Gestores (Com Multas)
+                              </>
+                            )}
+                          </span>
+                        </div>
                         <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
                           {laudo.data}
                         </span>
@@ -696,12 +841,21 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                             {laudo.acompNome}
                           </span>
                         </div>
-                        <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800">
-                          <span className="text-slate-400">Passivo NR 28 Apurado:</span>
-                          <span className="font-bold text-rose-400">
-                            {formatarBRL(laudo.passivoRiscoMax)}
-                          </span>
-                        </div>
+                        {laudo.mostrarMultas === false ? (
+                          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800">
+                            <span className="text-slate-400">Cifras Financeiras:</span>
+                            <span className="font-bold text-amber-400 flex items-center gap-1">
+                              <EyeOff className="w-3 h-3" /> Ocultadas no Laudo
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800">
+                            <span className="text-slate-400">Passivo NR 28 Apurado:</span>
+                            <span className="font-bold text-rose-400">
+                              {formatarBRL(laudo.passivoRiscoMax)}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -714,9 +868,16 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                           onClick={() => handleBaixarPdfLaudo(laudo)}
                           disabled={gerandoPdfId === laudo.id}
                           className="flex-1 h-9 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          title={`Baixar laudo em PDF (${laudo.mostrarMultas === false ? "Modo Líderes - Sem Multas" : "Modo Gestores - Com Multas"})`}
                         >
                           <Download className="w-3.5 h-3.5 text-sky-400" />
-                          <span>{gerandoPdfId === laudo.id ? "Gerando PDF..." : "Baixar Laudo PDF"}</span>
+                          <span>
+                            {gerandoPdfId === laudo.id
+                              ? "Gerando PDF..."
+                              : laudo.mostrarMultas === false
+                              ? "Baixar PDF (Líderes)"
+                              : "Baixar PDF (Gestores)"}
+                          </span>
                         </button>
 
                         {/* View in Read-Only Mode */}
@@ -818,6 +979,45 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                 </div>
               </div>
 
+              {/* Perfil e Indicadores */}
+              <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`p-2 rounded-xl ${
+                      laudoVisualizando.mostrarMultas === false
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                        : "bg-sky-500/20 text-sky-300 border border-sky-500/30"
+                    }`}
+                  >
+                    {laudoVisualizando.mostrarMultas === false ? (
+                      <Users className="w-4 h-4" />
+                    ) : (
+                      <Briefcase className="w-4 h-4" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-semibold uppercase">
+                      Perfil Original de Emissão:
+                    </span>
+                    <span className="font-bold text-white text-xs">
+                      {laudoVisualizando.mostrarMultas === false
+                        ? "Para Líderes Operacionais (Sem Valores de Multas)"
+                        : "Para Gestores & Diretoria (Com Estimativas de Multas)"}
+                    </span>
+                  </div>
+                </div>
+
+                <span
+                  className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full ${
+                    laudoVisualizando.mostrarMultas === false
+                      ? "bg-amber-500/20 text-amber-300"
+                      : "bg-sky-500/20 text-sky-300"
+                  }`}
+                >
+                  {laudoVisualizando.mostrarMultas === false ? "Multas Ocultas" : "Multas Ativas"}
+                </span>
+              </div>
+
               {/* Indicadores */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
@@ -829,7 +1029,7 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                   <span className="text-base font-black text-rose-300">{laudoVisualizando.totalNaoConformidades}</span>
                 </div>
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center">
-                  <span className="block text-[10px] text-slate-400">Passivo NR 28</span>
+                  <span className="block text-[10px] text-slate-400">Passivo Estimado NR 28</span>
                   <span className="text-sm font-bold text-rose-400">{formatarBRL(laudoVisualizando.passivoRiscoMax)}</span>
                 </div>
               </div>
@@ -908,21 +1108,35 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
                   type="button"
                   onClick={() => setLaudoVisualizando(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                 >
                   Fechar
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleBaixarPdfLaudo(laudoVisualizando)}
-                  className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                  id={`btn-modal-baixar-lideres-${laudoVisualizando.id}`}
+                  onClick={() => handleBaixarPdfLaudo(laudoVisualizando, false)}
+                  disabled={gerandoPdfId === laudoVisualizando.id}
+                  className="px-3.5 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Baixar versão sem valores de multas voltada para encarregados e líderes"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Baixar Laudo Oficial (PDF)</span>
+                  <Users className="w-3.5 h-3.5" />
+                  <span>PDF p/ Líderes (s/ Multas)</span>
+                </button>
+                <button
+                  type="button"
+                  id={`btn-modal-baixar-gestores-${laudoVisualizando.id}`}
+                  onClick={() => handleBaixarPdfLaudo(laudoVisualizando, true)}
+                  disabled={gerandoPdfId === laudoVisualizando.id}
+                  className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Baixar versão com passivo financeiro da NR 28 para diretoria e gestores"
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span>PDF p/ Gestores (c/ Multas)</span>
                 </button>
               </div>
             </div>

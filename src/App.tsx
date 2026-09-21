@@ -6,11 +6,15 @@ import { ClosureStep } from "./components/ClosureStep";
 import { AdminModal } from "./components/AdminModal";
 import { LoginScreen } from "./components/LoginScreen";
 import { InspectionHub } from "./components/InspectionHub";
+import { DashboardGestao } from "./components/DashboardGestao";
+import { GestaoProgramacaoRelatorios } from "./components/GestaoProgramacaoRelatorios";
+import { PortalAssinaturaAcompanhante } from "./components/PortalAssinaturaAcompanhante";
 import { PrimeiroAcessoModal } from "./components/PrimeiroAcessoModal";
 import { OfflineIndicator } from "./components/OfflineIndicator";
 import {
   Empresa,
   LaudoEmitido,
+  ProgramacaoRelatorio,
   RascunhoVistoria,
   UsuarioAuditor,
   VistoriaState,
@@ -22,6 +26,10 @@ import {
   getRascunhos,
   getUsuarioAutenticado,
   getUsuarios,
+  getProgramacoes,
+  salvarProgramacao,
+  excluirProgramacao,
+  concluirCicloProgramacao,
   limparUsuarioAutenticado,
   removerLogoConsultoria,
   salvarEmpresa,
@@ -32,7 +40,16 @@ import {
   excluirUsuario,
   excluirLaudo,
   deletarRascunho,
+  STORAGE_KEYS,
 } from "./utils/storage";
+import {
+  subscribeUsuariosNuvem,
+  subscribeEmpresasNuvem,
+  subscribeRascunhosNuvem,
+  subscribeLaudosNuvem,
+  subscribeProgramacoesNuvem,
+  testConnection,
+} from "./utils/firebaseSync";
 
 const INITIAL_STATE: VistoriaState = {
   empresa: "",
@@ -53,15 +70,50 @@ export function App() {
   // Authentication & Navigation
   const [usuario, setUsuario] = useState<UsuarioAuditor | null>(null);
   const [usuarios, setUsuarios] = useState<UsuarioAuditor[]>([]);
-  const [modoVisualizacao, setModoVisualizacao] = useState<"login" | "hub" | "inspecao">("hub");
+  const [modoVisualizacao, setModoVisualizacao] = useState<
+    "login" | "hub" | "inspecao" | "dashboard" | "programacao"
+  >("hub");
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [state, setState] = useState<VistoriaState>(INITIAL_STATE);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [rascunhos, setRascunhos] = useState<RascunhoVistoria[]>([]);
   const [laudos, setLaudos] = useState<LaudoEmitido[]>([]);
+  const [programacoes, setProgramacoes] = useState<ProgramacaoRelatorio[]>([]);
   const [logoConsultoria, setLogoConsultoria] = useState<string | null>(null);
   const [adminOpen, setAdminOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Detecção de Assinatura Remota via QR Code (?assinar=SESSION_ID)
+  const [sessaoAssinaturaId, setSessaoAssinaturaId] = useState<string | null>(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const paramAssinar = searchParams.get("assinar");
+      if (paramAssinar) return paramAssinar;
+
+      if (window.location.hash.includes("assinar=")) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        return hashParams.get("assinar");
+      }
+    } catch {
+      // fallback
+    }
+    return null;
+  });
+
+  // Listener para caso o hash ou URL mude dinamicamente
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const searchParams = new URLSearchParams(window.location.search);
+        const param = searchParams.get("assinar");
+        if (param) setSessaoAssinaturaId(param);
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   // Load initial data from local storage
   useEffect(() => {
@@ -84,7 +136,56 @@ export function App() {
     setEmpresas(getEmpresas());
     setRascunhos(getRascunhos());
     setLaudos(getLaudos());
+    setProgramacoes(getProgramacoes());
     setLogoConsultoria(getLogoConsultoria());
+
+    // Testa conexão com o banco em nuvem
+    testConnection();
+
+    // Sincronização em tempo real entre múltiplos dispositivos via Firestore
+    const unsubUsuarios = subscribeUsuariosNuvem((cloudUsers) => {
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsuarios(cloudUsers);
+        localStorage.setItem(STORAGE_KEYS.USUARIOS, JSON.stringify(cloudUsers));
+        setUsuario((curr) => {
+          if (!curr) return null;
+          const match = cloudUsers.find((u) => u.id === curr.id);
+          return match || curr;
+        });
+      }
+    });
+
+    const unsubEmpresas = subscribeEmpresasNuvem((cloudEmpresas) => {
+      if (cloudEmpresas && cloudEmpresas.length > 0) {
+        setEmpresas(cloudEmpresas);
+        localStorage.setItem(STORAGE_KEYS.EMPRESAS, JSON.stringify(cloudEmpresas));
+      }
+    });
+
+    const unsubRascunhos = subscribeRascunhosNuvem((cloudRascunhos) => {
+      setRascunhos(cloudRascunhos);
+      localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(cloudRascunhos));
+    });
+
+    const unsubLaudos = subscribeLaudosNuvem((cloudLaudos) => {
+      setLaudos(cloudLaudos);
+      localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify(cloudLaudos));
+    });
+
+    const unsubProgramacoes = subscribeProgramacoesNuvem((cloudProgs) => {
+      if (cloudProgs && cloudProgs.length > 0) {
+        setProgramacoes(cloudProgs);
+        localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify(cloudProgs));
+      }
+    });
+
+    return () => {
+      unsubUsuarios();
+      unsubEmpresas();
+      unsubRascunhos();
+      unsubLaudos();
+      unsubProgramacoes();
+    };
   }, []);
 
   const showToast = (msg: string) => {
@@ -187,15 +288,19 @@ export function App() {
   };
 
   const handleSalvarRascunho = () => {
-    salvarRascunho(state);
+    const salvo = salvarRascunho(state);
+    setState((prev) => ({ ...prev, rascunhoId: salvo.id }));
     setRascunhos(getRascunhos());
-    showToast("Vistoria salva em rascunho com sucesso!");
+    showToast("Vistoria salva em 'Em Andamento' com sucesso!");
   };
 
   const handleCarregarRascunho = (r: RascunhoVistoria) => {
-    setState(r.estado);
-    setCurrentStep(2);
-    showToast(`Rascunho da empresa "${r.empresa}" carregado!`);
+    setState({
+      ...r.estado,
+      rascunhoId: r.id,
+    });
+    setCurrentStep(r.estado.evidencias?.length > 0 ? 2 : 1);
+    showToast(`Inspeção da empresa "${r.empresa}" em andamento carregada!`);
   };
 
   const handleExcluirRascunho = (id: string) => {
@@ -205,19 +310,33 @@ export function App() {
   };
 
   const handleAdicionarApontamento = (novo: any) => {
-    setState((prev) => ({
-      ...prev,
-      evidencias: [novo, ...prev.evidencias],
-    }));
-    showToast("Apontamento registrado com sucesso!");
+    setState((prev) => {
+      const atualizado: VistoriaState = {
+        ...prev,
+        evidencias: [novo, ...prev.evidencias],
+      };
+      // Salva imediatamente em "Em Andamento" (rascunhos) para nunca perder os dados
+      const rascSalvo = salvarRascunho(atualizado);
+      atualizado.rascunhoId = rascSalvo.id;
+      setRascunhos(getRascunhos());
+      return atualizado;
+    });
+    showToast("Apontamento registrado e salvo automaticamente em 'Em Andamento'!");
   };
 
   const handleRemoverApontamento = (id: string) => {
-    setState((prev) => ({
-      ...prev,
-      evidencias: prev.evidencias.filter((e) => e.id !== id),
-    }));
-    showToast("Apontamento removido.");
+    setState((prev) => {
+      const atualizado: VistoriaState = {
+        ...prev,
+        evidencias: prev.evidencias.filter((e) => e.id !== id),
+      };
+      // Atualiza também nos rascunhos em andamento
+      const rascSalvo = salvarRascunho(atualizado);
+      atualizado.rascunhoId = rascSalvo.id;
+      setRascunhos(getRascunhos());
+      return atualizado;
+    });
+    showToast("Apontamento removido e relatório atualizado.");
   };
 
   const handleSalvarLogo = (b64: string) => {
@@ -242,9 +361,66 @@ export function App() {
   };
 
   const handleLaudoEmitido = () => {
+    if (state.rascunhoId) {
+      deletarRascunho(state.rascunhoId);
+      setRascunhos(getRascunhos());
+    }
     setLaudos(getLaudos());
     showToast("Laudo assinado e arquivado permanentemente.");
   };
+
+  // Gerenciamento de Programações Periódicas de Relatórios
+  const handleSalvarProgramacao = (progData: Omit<ProgramacaoRelatorio, "id"> & { id?: string }) => {
+    salvarProgramacao(progData);
+    setProgramacoes(getProgramacoes());
+    showToast("Programação de relatório salva com sucesso!");
+  };
+
+  const handleExcluirProgramacao = (id: string) => {
+    excluirProgramacao(id);
+    setProgramacoes(getProgramacoes());
+    showToast("Programação de relatório excluída.");
+  };
+
+  const handleConcluirCicloProgramacao = (id: string, dataConclusao: string) => {
+    const atualizada = concluirCicloProgramacao(id, dataConclusao);
+    setProgramacoes(getProgramacoes());
+    if (atualizada) {
+      showToast(`Vistoria registrada em ${dataConclusao}. Próximo ciclo recalculado!`);
+    }
+  };
+
+  const handleIniciarVistoriaParaEmpresa = (empresaNome: string, tipo?: string) => {
+    const empExistente = empresas.find(
+      (e) => e.nome.toLowerCase().trim() === empresaNome.toLowerCase().trim()
+    );
+
+    setState({
+      ...INITIAL_STATE,
+      empresa: empresaNome,
+      cnpj: empExistente ? empExistente.cnpj : "",
+      faixa: empExistente?.faixaFuncionarios || "26 a 50",
+      inspetor: usuario ? usuario.nome : "Raul Luiz de Faria",
+      regInspetor: usuario ? usuario.registro : "MTE 61658/MG",
+      data: new Date().toLocaleDateString("pt-BR"),
+      evidencias: [],
+    });
+    setCurrentStep(1);
+    setModoVisualizacao("inspecao");
+    showToast(`Iniciando vistoria técnica para "${empresaNome}"...`);
+  };
+
+  // 0. PORTAL EXCLUSIVO PARA O ACOMPANHANTE ASSINAR VIA QR CODE (SEM CONTATO)
+  if (sessaoAssinaturaId) {
+    return (
+      <PortalAssinaturaAcompanhante
+        sessaoId={sessaoAssinaturaId}
+        onConcluido={() => {
+          showToast("Assinatura enviada ao auditor com sucesso!");
+        }}
+      />
+    );
+  }
 
   // 1. TELA DE LOGIN
   if (!usuario || modoVisualizacao === "login") {
@@ -261,6 +437,8 @@ export function App() {
           onContinuarInspecao={handleContinuarInspecao}
           onLogout={handleLogout}
           onAbrirAdmin={usuario.perfil === "admin" ? handleAbrirAdmin : undefined}
+          onAbrirDashboard={() => setModoVisualizacao("dashboard")}
+          onAbrirProgramacao={() => setModoVisualizacao("programacao")}
           onLaudoExcluido={() => setLaudos(getLaudos())}
         />
 
@@ -302,7 +480,61 @@ export function App() {
     );
   }
 
-  // 3. FLUXO DE EXECUÇÃO DA INSPEÇÃO (ETAPAS 1, 2, 3)
+  // 3. TELA DE PROGRAMAÇÃO E GESTÃO DE RELATÓRIOS POR EMPRESA
+  if (modoVisualizacao === "programacao" && usuario) {
+    return (
+      <>
+        <GestaoProgramacaoRelatorios
+          usuario={usuario}
+          empresas={empresas}
+          laudos={laudos}
+          programacoes={programacoes}
+          onSalvarProgramacao={handleSalvarProgramacao}
+          onExcluirProgramacao={handleExcluirProgramacao}
+          onConcluirCiclo={handleConcluirCicloProgramacao}
+          onIniciarVistoriaParaEmpresa={handleIniciarVistoriaParaEmpresa}
+          onVoltar={() => setModoVisualizacao("hub")}
+          onAbrirDashboard={() => setModoVisualizacao("dashboard")}
+        />
+
+        {toastMessage && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg border border-slate-800 transition-all">
+            {toastMessage}
+          </div>
+        )}
+
+        <OfflineIndicator />
+      </>
+    );
+  }
+
+  // 4. TELA DE DASHBOARD DE GESTÃO (GRÁFICOS RECHARTS POR NR E MULTAS)
+  if (modoVisualizacao === "dashboard" && usuario) {
+    return (
+      <>
+        <DashboardGestao
+          usuario={usuario}
+          laudos={laudos}
+          rascunhos={rascunhos}
+          onVoltar={() => setModoVisualizacao("hub")}
+          onNovaVistoria={handleIniciarNovaInspecao}
+          onAbrirProgramacao={() => setModoVisualizacao("programacao")}
+        />
+
+        {/* Toast Feedback */}
+        {toastMessage && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg border border-slate-800 transition-all">
+            {toastMessage}
+          </div>
+        )}
+
+        {/* Indicador de Conexão / Modo Offline PWA */}
+        <OfflineIndicator />
+      </>
+    );
+  }
+
+  // 5. FLUXO DE EXECUÇÃO DA INSPEÇÃO (ETAPAS 1, 2, 3)
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans selection:bg-sky-500 selection:text-white">
       {/* Top Navigation */}
@@ -313,6 +545,8 @@ export function App() {
         onOpenAdmin={handleAbrirAdmin}
         onNovaVistoria={handleNovaVistoria}
         onVoltarHub={() => setModoVisualizacao("hub")}
+        onAbrirDashboard={() => setModoVisualizacao("dashboard")}
+        onAbrirProgramacao={() => setModoVisualizacao("programacao")}
         isAdmin={usuario.perfil === "admin"}
       />
 

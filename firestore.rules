@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Auditores e Administradores
+    match /usuarios/{usuarioId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Empresas cadastradas
+    match /empresas/{empresaId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Rascunhos de vistorias em andamento
+    match /rascunhos/{rascunhoId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Laudos técnicos periciais emitidos
+    match /laudos/{laudoId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Programações e cronogramas de vistorias periódicas por empresa
+    match /programacoes/{programacaoId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Sessões de assinatura remota sem contato via QR Code
+    match /sessoesAssinatura/{sessaoId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Test connection doc
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

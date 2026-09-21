@@ -13,6 +13,7 @@ import {
   Layers,
   AlertCircle,
   HelpCircle,
+  Lock,
 } from "lucide-react";
 import { Empresa, FaixaFuncionarios, RascunhoVistoria, VistoriaState } from "../types";
 import { FAIXAS_FUNCIONARIOS } from "../data/nr28Data";
@@ -308,21 +309,44 @@ export const IdentificationStep: React.FC<IdentificationStepProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  Grau de Risco (1 a 4):
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center justify-between">
+                  <span>Grau de Risco (NR 04):</span>
+                  <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                    <Lock className="w-2.5 h-2.5 text-amber-600" />
+                    Puxado do CNPJ
+                  </span>
                 </label>
-                <div className="flex items-center gap-2">
-                  <select
-                    id="select-grau-risco-nr04"
-                    value={state.grauRisco || 3}
-                    onChange={(e) => onChange("grauRisco", Number(e.target.value) as 1 | 2 | 3 | 4)}
-                    className="h-10 px-3 w-full bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                <div className="relative">
+                  <div
+                    id="display-grau-risco-bloqueado"
+                    className="h-10 px-3 w-full bg-slate-100 border border-slate-300 rounded-xl text-xs font-black text-slate-800 flex items-center justify-between select-none cursor-not-allowed shadow-inner"
+                    title="O Grau de Risco é derivado automaticamente do CNPJ/CNAE da empresa (Quadro I da NR 04) e não pode ser alterado manualmente na inspeção."
                   >
-                    <option value={1}>Grau 1 (Leve / Escritório)</option>
-                    <option value={2}>Grau 2 (Médio / Comércio)</option>
-                    <option value={3}>Grau 3 (Alto / Indústria & Obra)</option>
-                    <option value={4}>Grau 4 (Máximo / Pesado)</option>
-                  </select>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                          (state.grauRisco || 3) === 1
+                            ? "bg-emerald-500"
+                            : (state.grauRisco || 3) === 2
+                            ? "bg-sky-500"
+                            : (state.grauRisco || 3) === 3
+                            ? "bg-amber-500"
+                            : "bg-rose-500"
+                        }`}
+                      />
+                      <span className="truncate">
+                        Grau {state.grauRisco || 3} —{" "}
+                        {(state.grauRisco || 3) === 1
+                          ? "Risco Leve (Escritório)"
+                          : (state.grauRisco || 3) === 2
+                          ? "Risco Médio (Comércio/Serviço)"
+                          : (state.grauRisco || 3) === 3
+                          ? "Risco Alto (Indústria/Obras)"
+                          : "Risco Máximo (Pesado/Inflamáveis)"}
+                      </span>
+                    </span>
+                    <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
+                  </div>
                 </div>
               </div>
             </div>

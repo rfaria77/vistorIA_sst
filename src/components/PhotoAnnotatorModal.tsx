@@ -215,7 +215,7 @@ export const PhotoAnnotatorModal: React.FC<PhotoAnnotatorModalProps> = ({
   const handleSave = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const annotatedDataUrl = canvas.toDataURL("image/jpeg", 0.9);
+    const annotatedDataUrl = canvas.toDataURL("image/jpeg", 0.8);
     onSaveAnnotatedImage(annotatedDataUrl);
     onClose();
   };

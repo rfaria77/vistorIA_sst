@@ -84,6 +84,9 @@ export interface VistoriaState {
   grauRisco?: 1 | 2 | 3 | 4;
   assinaturaInspetor?: string;
   assinaturaAcompanhante?: string;
+  rascunhoId?: string;
+  mostrarMultas?: boolean; // Se false, oculta valores e números referentes a multas (para líderes de setor)
+  publicoAlvo?: "gestor" | "lider";
 }
 
 export interface LaudoEmitido {
@@ -104,6 +107,8 @@ export interface LaudoEmitido {
   grauRisco?: 1 | 2 | 3 | 4;
   pdfBase64?: string;
   estado?: VistoriaState;
+  mostrarMultas?: boolean;
+  publicoAlvo?: "gestor" | "lider";
 }
 
 export interface RascunhoVistoria {
@@ -112,3 +117,50 @@ export interface RascunhoVistoria {
   empresa: string;
   estado: VistoriaState;
 }
+
+export type PeriodicidadeRelatorio =
+  | "semanal"
+  | "quinzenal"
+  | "mensal"
+  | "semestral"
+  | "anual"
+  | "eventual";
+
+export type StatusPrazoRelatorio = "atrasado" | "atencao" | "em_dia" | "eventual";
+
+export interface ProgramacaoRelatorio {
+  id: string;
+  empresaId?: string;
+  empresaNome: string;
+  tipoRelatorio: string;
+  periodicidade: PeriodicidadeRelatorio;
+  dataUltimoRelatorio?: string; // DD/MM/YYYY ou YYYY-MM-DD
+  idUltimoLaudo?: string;
+  numeroUltimoLaudo?: number;
+  dataProximaProgramada?: string; // YYYY-MM-DD
+  auditorResponsavel?: string;
+  observacoes?: string;
+  concluidoEm?: string;
+  criadoEm?: string;
+  atualizadoEm?: string;
+}
+
+export interface SessaoAssinatura {
+  id: string;
+  empresa: string;
+  cnpj: string;
+  data: string;
+  inspetor: string;
+  regInspetor: string;
+  acompNome: string;
+  acompCargo: string;
+  totalApontamentos: number;
+  status: "pendente" | "assinado" | "cancelado";
+  assinaturaAcompanhante?: string;
+  assinadoEm?: string;
+  criadoEm: string;
+  atualizadoEm?: string;
+  ipAssinante?: string;
+  userAgentAssinante?: string;
+}
+

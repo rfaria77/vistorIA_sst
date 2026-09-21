@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { UsuarioAuditor } from "../types";
 import { getUsuarios, salvarUsuario } from "../utils/storage";
+import { subscribeUsuariosNuvem } from "../utils/firebaseSync";
 import {
   isBiometriaHabilitada,
   autenticarComBiometria,
@@ -51,6 +52,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     if (list.length > 0) {
       setUsuarioSelecionadoId(list[0].id);
     }
+
+    const unsub = subscribeUsuariosNuvem((cloudUsers) => {
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsuariosCadastrados(cloudUsers);
+        setUsuarioSelecionadoId((prevId) =>
+          cloudUsers.some((u) => u.id === prevId) ? prevId : cloudUsers[0].id
+        );
+      }
+    });
+
+    return () => unsub();
   }, []);
 
   const usuarioSelecionado = usuariosCadastrados.find(

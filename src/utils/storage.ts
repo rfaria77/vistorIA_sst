@@ -1,6 +1,26 @@
-import { Empresa, LaudoEmitido, RascunhoVistoria, UsuarioAuditor, VistoriaState } from "../types";
+import {
+  Empresa,
+  LaudoEmitido,
+  ProgramacaoRelatorio,
+  RascunhoVistoria,
+  SessaoAssinatura,
+  UsuarioAuditor,
+  VistoriaState,
+} from "../types";
+import {
+  salvarUsuarioNuvem,
+  excluirUsuarioNuvem,
+  salvarEmpresaNuvem,
+  salvarRascunhoNuvem,
+  excluirRascunhoNuvem,
+  salvarLaudoNuvem,
+  excluirLaudoNuvem,
+  salvarProgramacaoNuvem,
+  excluirProgramacaoNuvem,
+  criarSessaoAssinaturaNuvem,
+} from "./firebaseSync";
 
-const STORAGE_KEYS = {
+export const STORAGE_KEYS = {
   EMPRESAS: "vistoria_sst_empresas",
   RASCUNHOS: "vistoria_sst_rascunhos",
   LAUDOS: "vistoria_sst_laudos",
@@ -8,6 +28,8 @@ const STORAGE_KEYS = {
   ULTIMO_ESTADO: "vistoria_sst_ultimo_estado",
   AUTH_USER: "vistoria_sst_auth_user",
   USUARIOS: "vistoria_sst_usuarios",
+  PROGRAMACOES: "vistoria_sst_programacoes",
+  SESSOES_ASSINATURA: "vistoria_sst_sessoes_assinatura",
 };
 
 export const USUARIO_ADMIN_RAUL: UsuarioAuditor = {
@@ -131,12 +153,14 @@ export function salvarUsuario(usuario: Omit<UsuarioAuditor, "id"> & { id?: strin
   }
 
   localStorage.setItem(STORAGE_KEYS.USUARIOS, JSON.stringify(usuarios));
+  salvarUsuarioNuvem(novo).catch((err) => console.warn("Sync nuvem usuário:", err));
   return novo;
 }
 
 export function excluirUsuario(id: string): void {
   const usuarios = getUsuarios().filter((u) => u.id !== id);
   localStorage.setItem(STORAGE_KEYS.USUARIOS, JSON.stringify(usuarios));
+  excluirUsuarioNuvem(id).catch((err) => console.warn("Sync nuvem excluir usuário:", err));
 }
 
 export function getUsuarioAutenticado(): UsuarioAuditor | null {
@@ -231,6 +255,7 @@ export function salvarEmpresa(empresa: Omit<Empresa, "id"> & { id?: string }): E
   }
 
   localStorage.setItem(STORAGE_KEYS.EMPRESAS, JSON.stringify(empresas));
+  salvarEmpresaNuvem(nova).catch((err) => console.warn("Sync nuvem empresa:", err));
   return nova;
 }
 
@@ -313,23 +338,49 @@ export function getRascunhos(): RascunhoVistoria[] {
 
 export function salvarRascunho(estado: VistoriaState): RascunhoVistoria {
   const rascunhos = getRascunhos();
-  const id = `rasc-${Date.now()}`;
-  const novo: RascunhoVistoria = {
-    id,
-    empresa: estado.empresa || "Sem Nome",
-    dataAtualizacao: new Date().toLocaleString("pt-BR"),
-    estado,
+  const nomeEmpresa = estado.empresa?.trim() || "Vistoria em Andamento";
+  
+  // Localiza rascunho existente pelo id ou pelo nome da empresa
+  const rascExistente = estado.rascunhoId
+    ? rascunhos.find((r) => r.id === estado.rascunhoId)
+    : rascunhos.find(
+        (r) =>
+          r.empresa &&
+          estado.empresa &&
+          r.empresa.trim().toLowerCase() === estado.empresa.trim().toLowerCase()
+      );
+
+  const id = rascExistente?.id || estado.rascunhoId || `rasc-${Date.now()}`;
+  
+  const estadoAtualizado: VistoriaState = {
+    ...estado,
+    empresa: nomeEmpresa,
+    rascunhoId: id,
   };
 
-  // Mantem os 15 mais recentes
-  const atualizados = [novo, ...rascunhos.filter((r) => r.empresa !== estado.empresa)].slice(0, 15);
+  const novo: RascunhoVistoria = {
+    id,
+    empresa: nomeEmpresa,
+    dataAtualizacao: new Date().toLocaleString("pt-BR"),
+    estado: estadoAtualizado,
+  };
+
+  // Mantém no topo e filtra a versão anterior do mesmo rascunho
+  const outros = rascunhos.filter(
+    (r) =>
+      r.id !== id &&
+      (!estado.empresa || r.empresa.trim().toLowerCase() !== estado.empresa.trim().toLowerCase())
+  );
+  const atualizados = [novo, ...outros].slice(0, 30);
   localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(atualizados));
+  salvarRascunhoNuvem(novo).catch((err) => console.warn("Sync nuvem rascunho:", err));
   return novo;
 }
 
 export function deletarRascunho(id: string): void {
   const rascunhos = getRascunhos().filter((r) => r.id !== id);
   localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(rascunhos));
+  excluirRascunhoNuvem(id).catch((err) => console.warn("Sync nuvem excluir rascunho:", err));
 }
 export const excluirRascunho = deletarRascunho;
 
@@ -363,12 +414,14 @@ export function salvarLaudo(laudo: Omit<LaudoEmitido, "id" | "numero">): LaudoEm
     numero: laudos.length + 1,
   };
   localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify([novo, ...laudos]));
+  salvarLaudoNuvem(novo).catch((err) => console.warn("Sync nuvem laudo:", err));
   return novo;
 }
 
 export function excluirLaudo(id: string): void {
   const laudos = getLaudos().filter((l) => l.id !== id);
   localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify(laudos));
+  excluirLaudoNuvem(id).catch((err) => console.warn("Sync nuvem excluir laudo:", err));
 }
 export const deletarLaudo = excluirLaudo;
 
@@ -413,21 +466,32 @@ export function gerarTextoResumoExecutivo(
   passivoTotal: number,
   economiaTotal: number,
   qtdNaoConformidades: number,
-  auditor?: string
+  auditor?: string,
+  mostrarMultas: boolean = true
 ): string {
   const formatador = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
   const dataHoje = new Date().toLocaleDateString("pt-BR");
 
+  let blocoValores = "";
+  if (mostrarMultas) {
+    blocoValores =
+      `💰 Passivo Financeiro em Risco (NR 28): ${formatador.format(passivoTotal)}\n` +
+      `🛡️ Economia por Boas Práticas: ${formatador.format(economiaTotal)}\n\n`;
+  } else {
+    blocoValores =
+      `👷 Foco do Relatório: Líderes Operacionais / Chão de Fábrica\n` +
+      `🔒 Valores financeiros e multas da NR 28 ocultados neste relatório operacional.\n\n`;
+  }
+
   return (
-    `📋 VistorIA SST — RELATÓRIO PRELIMINAR DE AUDITORIA PERICIAL\n\n` +
+    `📋 VistorIA SST — RELATÓRIO ${mostrarMultas ? "GERENCIAL EXECUTIVO" : "OPERACIONAL PARA LÍDERES"}\n\n` +
     `🏢 Empresa Auditada: ${empresa}\n` +
     `📅 Data da Vistoria: ${dataHoje}\n` +
     `👷 Auditor Responsável: ${auditor || "Auditor Técnico SST"}\n` +
     `⚠️ Apontamentos Críticos (Não Conformidades): ${qtdNaoConformidades}\n` +
-    `💰 Passivo Financeiro em Risco (NR 28): ${formatador.format(passivoTotal)}\n` +
-    `🛡️ Economia por Boas Práticas: ${formatador.format(economiaTotal)}\n\n` +
+    blocoValores +
     `Laudo Técnico Pericial emitido com enquadramento legal nas Normas Regulamentadoras (NRs), ` +
-    `carimbos forenses de geolocalização (GPS) e assinaturas digitais do auditor e do preposto da empresa.`
+    `plano de ação 5W2H, carimbos forenses com GPS e assinaturas digitais coletadas in loco.`
   );
 }
 
@@ -437,10 +501,11 @@ export function gerarLinkEmail(
   passivoTotal: number,
   economiaTotal: number,
   qtdNaoConformidades: number,
-  auditor?: string
+  auditor?: string,
+  mostrarMultas: boolean = true
 ): string {
-  const assunto = `[Laudo Técnico SST] Resumo Pericial & Riscos NR 28 - ${empresa}`;
-  const corpo = gerarTextoResumoExecutivo(empresa, passivoTotal, economiaTotal, qtdNaoConformidades, auditor);
+  const assunto = `[Laudo Técnico SST - ${mostrarMultas ? "Gestores" : "Líderes"}] Resumo de Vistoria - ${empresa}`;
+  const corpo = gerarTextoResumoExecutivo(empresa, passivoTotal, economiaTotal, qtdNaoConformidades, auditor, mostrarMultas);
   return `mailto:${encodeURIComponent(emailDestino)}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpo)}`;
 }
 
@@ -449,20 +514,331 @@ export function gerarLinkWhatsApp(
   empresa: string,
   passivoTotal: number,
   economiaTotal: number,
-  qtdNaoConformidades: number
+  qtdNaoConformidades: number,
+  mostrarMultas: boolean = true
 ): string {
   const numLimpo = telefone.replace(/\D/g, "");
   const formatador = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
   const dataHoje = new Date().toLocaleDateString("pt-BR");
 
+  let blocoValores = "";
+  if (mostrarMultas) {
+    blocoValores =
+      `💰 *Passivo em Risco Estimado (NR 28):* ${formatador.format(passivoTotal)}\n` +
+      `🛡️ *Economia Estimada (Risco Evitado):* ${formatador.format(economiaTotal)}\n\n`;
+  } else {
+    blocoValores =
+      `👷 *Foco do Relatório:* Líderes Operacionais & Prevenção em Campo\n` +
+      `🔒 *Valores de multas NR 28:* Ocultados nesta emissão operacional.\n\n`;
+  }
+
   const msg =
-    `📋 *VistorIA SST — RELATÓRIO PRELIMINAR DE AUDITORIA*\n\n` +
+    `📋 *VistorIA SST — RELATÓRIO ${mostrarMultas ? "GERENCIAL (GESTORES)" : "OPERACIONAL (LÍDERES)"}*\n\n` +
     `🏢 *Empresa:* ${empresa}\n` +
     `📅 *Data da Vistoria:* ${dataHoje}\n` +
     `⚠️ *Apontamentos Críticos (Não Conformidades):* ${qtdNaoConformidades}\n` +
-    `💰 *Passivo em Risco Estimado (NR 28):* ${formatador.format(passivoTotal)}\n` +
-    `🛡️ *Economia Estimada (Risco Evitado):* ${formatador.format(economiaTotal)}\n\n` +
-    `_O Laudo Pericial completo com registros fotográficos forenses e assinaturas foi gerado com sucesso._`;
+    blocoValores +
+    `_O Laudo Pericial completo com plano de ação corretiva, fotos forenses e assinaturas foi gerado com sucesso._`;
 
   return `https://api.whatsapp.com/send?phone=${numLimpo}&text=${encodeURIComponent(msg)}`;
 }
+
+// --- GESTÃO DE PROGRAMAÇÃO DE RELATÓRIOS E VISTORIAS ---
+
+export const PROGRAMACOES_INICIAIS_EXEMPLO: ProgramacaoRelatorio[] = [
+  {
+    id: "prog-demo-1",
+    empresaNome: "Indústria Metalmecânica Modelo S.A.",
+    tipoRelatorio: "Inspeção Mensal de NR 12 & Máquinas Operatrizes",
+    periodicidade: "mensal",
+    dataUltimoRelatorio: "18/08/2026",
+    dataProximaProgramada: "2026-09-18",
+    auditorResponsavel: "Raul Luiz de Faria",
+    observacoes: "Verificar intertravamentos de segurança e paradas de emergência em prensas.",
+    criadoEm: "18/08/2026",
+  },
+  {
+    id: "prog-demo-2",
+    empresaNome: "Indústria Metalmecânica Modelo S.A.",
+    tipoRelatorio: "Auditoria Semestral de Elétrica NR 10 & Prontuário PIE",
+    periodicidade: "semestral",
+    dataUltimoRelatorio: "25/03/2026",
+    dataProximaProgramada: "2026-09-25",
+    auditorResponsavel: "Marcos Vinicius Ferreira Mendes",
+    observacoes: "Revisar laudo SPDA e termografia dos quadros QGBT.",
+    criadoEm: "25/03/2026",
+  },
+  {
+    id: "prog-demo-3",
+    empresaNome: "Construtora Horizonte Ltda",
+    tipoRelatorio: "Vistoria Semanal de Canteiro de Obras NR 18",
+    periodicidade: "semanal",
+    dataUltimoRelatorio: "15/09/2026",
+    dataProximaProgramada: "2026-09-22",
+    auditorResponsavel: "Raul Luiz de Faria",
+    observacoes: "Inspecionar andaimes fachadeiros, guarda-corpos e trabalho em altura NR 35.",
+    criadoEm: "15/09/2026",
+  },
+  {
+    id: "prog-demo-4",
+    empresaNome: "Logística Rápida Express",
+    tipoRelatorio: "Auditoria Quinzenal de Empilhadeiras e Ergonomia NR 17",
+    periodicidade: "quinzenal",
+    dataUltimoRelatorio: "01/09/2026",
+    dataProximaProgramada: "2026-09-16",
+    auditorResponsavel: "Marcos Vinicius Ferreira Mendes",
+    observacoes: "Checklist de buzina, faróis, extintores e rotação de operadores.",
+    criadoEm: "01/09/2026",
+  },
+  {
+    id: "prog-demo-5",
+    empresaNome: "Hospital São Lucas",
+    tipoRelatorio: "Avaliação Anual do Programa de Gerenciamento de Riscos (PGR)",
+    periodicidade: "anual",
+    dataUltimoRelatorio: "10/11/2025",
+    dataProximaProgramada: "2026-11-10",
+    auditorResponsavel: "Raul Luiz de Faria",
+    observacoes: "Reavaliação de riscos biológicos NR 32 e plano de ação integrado.",
+    criadoEm: "10/11/2025",
+  },
+  {
+    id: "prog-demo-6",
+    empresaNome: "Hospital São Lucas",
+    tipoRelatorio: "Vistoria Eventual por Demanda / Quase-Acidente",
+    periodicidade: "eventual",
+    dataUltimoRelatorio: "05/09/2026",
+    dataProximaProgramada: "",
+    auditorResponsavel: "Marcos Vinicius Ferreira Mendes",
+    observacoes: "Realizada somente mediante solicitação da CIPA ou ocorrência extraordinária.",
+    criadoEm: "05/09/2026",
+  },
+];
+
+export function getProgramacoes(): ProgramacaoRelatorio[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PROGRAMACOES);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify(PROGRAMACOES_INICIAIS_EXEMPLO));
+      // Salva também no Firestore
+      PROGRAMACOES_INICIAIS_EXEMPLO.forEach((p) => salvarProgramacaoNuvem(p));
+      return PROGRAMACOES_INICIAIS_EXEMPLO;
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function calcularProximaData(dataBase: string | Date, periodicidade: string): string {
+  if (periodicidade === "eventual") return "";
+  let d: Date;
+  if (typeof dataBase === "string") {
+    if (dataBase.includes("/")) {
+      const partes = dataBase.split("/");
+      d = new Date(Number(partes[2]), Number(partes[1]) - 1, Number(partes[0]));
+    } else {
+      d = new Date(`${dataBase}T12:00:00`);
+    }
+  } else {
+    d = new Date(dataBase);
+  }
+
+  if (isNaN(d.getTime())) return "";
+
+  const proxima = new Date(d);
+  switch (periodicidade) {
+    case "semanal":
+      proxima.setDate(proxima.getDate() + 7);
+      break;
+    case "quinzenal":
+      proxima.setDate(proxima.getDate() + 15);
+      break;
+    case "mensal":
+      proxima.setMonth(proxima.getMonth() + 1);
+      break;
+    case "semestral":
+      proxima.setMonth(proxima.getMonth() + 6);
+      break;
+    case "anual":
+      proxima.setFullYear(proxima.getFullYear() + 1);
+      break;
+    default:
+      return "";
+  }
+  return proxima.toISOString().split("T")[0];
+}
+
+export function calcularStatusPrazo(
+  dataProxima?: string,
+  periodicidade?: string
+): { status: "atrasado" | "atencao" | "em_dia" | "eventual"; diasDiferenca: number; label: string } {
+  if (periodicidade === "eventual" && !dataProxima) {
+    return { status: "eventual", diasDiferenca: 0, label: "Eventual (Sob Demanda)" };
+  }
+
+  if (!dataProxima) {
+    return { status: "eventual", diasDiferenca: 0, label: "Sem data agendada" };
+  }
+
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  let dataAlvo: Date;
+  if (dataProxima.includes("-")) {
+    const [ano, mes, dia] = dataProxima.split("-").map(Number);
+    dataAlvo = new Date(ano, mes - 1, dia);
+  } else if (dataProxima.includes("/")) {
+    const [dia, mes, ano] = dataProxima.split("/").map(Number);
+    dataAlvo = new Date(ano, mes - 1, dia);
+  } else {
+    dataAlvo = new Date(dataProxima);
+  }
+
+  dataAlvo.setHours(0, 0, 0, 0);
+
+  if (isNaN(dataAlvo.getTime())) {
+    return { status: "eventual", diasDiferenca: 0, label: "Data não definida" };
+  }
+
+  const diffMs = dataAlvo.getTime() - hoje.getTime();
+  const diffDias = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDias < 0) {
+    const atraso = Math.abs(diffDias);
+    return {
+      status: "atrasado",
+      diasDiferenca: atraso,
+      label: `Atrasado (${atraso}d)`,
+    };
+  } else if (diffDias === 0) {
+    return {
+      status: "atencao",
+      diasDiferenca: 0,
+      label: "Vence hoje!",
+    };
+  } else if (diffDias <= 7) {
+    return {
+      status: "atencao",
+      diasDiferenca: diffDias,
+      label: `Vence em ${diffDias}d`,
+    };
+  } else {
+    return {
+      status: "em_dia",
+      diasDiferenca: diffDias,
+      label: `Em dia (${diffDias}d)`,
+    };
+  }
+}
+
+export function salvarProgramacao(
+  prog: Omit<ProgramacaoRelatorio, "id"> & { id?: string }
+): ProgramacaoRelatorio {
+  const lista = getProgramacoes();
+  const agoraStr = new Date().toLocaleDateString("pt-BR");
+
+  let salvo: ProgramacaoRelatorio;
+  if (prog.id) {
+    salvo = {
+      ...(prog as ProgramacaoRelatorio),
+      atualizadoEm: agoraStr,
+    };
+    const idx = lista.findIndex((p) => p.id === prog.id);
+    if (idx >= 0) {
+      lista[idx] = salvo;
+    } else {
+      lista.push(salvo);
+    }
+  } else {
+    salvo = {
+      ...prog,
+      id: `prog-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+      criadoEm: agoraStr,
+      atualizadoEm: agoraStr,
+    };
+    lista.push(salvo);
+  }
+
+  localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify(lista));
+  salvarProgramacaoNuvem(salvo);
+  return salvo;
+}
+
+export function excluirProgramacao(id: string): void {
+  const lista = getProgramacoes().filter((p) => p.id !== id);
+  localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify(lista));
+  excluirProgramacaoNuvem(id);
+}
+
+export function concluirCicloProgramacao(
+  id: string,
+  dataConclusao: string = new Date().toLocaleDateString("pt-BR"),
+  idLaudoGerado?: string,
+  numeroLaudoGerado?: number
+): ProgramacaoRelatorio | null {
+  const lista = getProgramacoes();
+  const item = lista.find((p) => p.id === id);
+  if (!item) return null;
+
+  item.dataUltimoRelatorio = dataConclusao;
+  if (idLaudoGerado) item.idUltimoLaudo = idLaudoGerado;
+  if (numeroLaudoGerado) item.numeroUltimoLaudo = numeroLaudoGerado;
+  item.concluidoEm = dataConclusao;
+
+  // Calcula automaticamente a próxima data baseada na periodicidade
+  if (item.periodicidade !== "eventual") {
+    item.dataProximaProgramada = calcularProximaData(dataConclusao, item.periodicidade);
+  }
+
+  item.atualizadoEm = new Date().toLocaleDateString("pt-BR");
+  localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify(lista));
+  salvarProgramacaoNuvem(item);
+  return item;
+}
+
+// --- SESSÕES DE ASSINATURA REMOTA (QR CODE) ---
+
+export function getSessoesAssinatura(): SessaoAssinatura[] {
+  const data = localStorage.getItem(STORAGE_KEYS.SESSOES_ASSINATURA);
+  if (!data) return [];
+  try {
+    return JSON.parse(data);
+  } catch {
+    return [];
+  }
+}
+
+export function getSessaoAssinaturaPorId(id: string): SessaoAssinatura | null {
+  const lista = getSessoesAssinatura();
+  return lista.find((s) => s.id === id) || null;
+}
+
+export function salvarSessaoAssinatura(sessao: SessaoAssinatura): SessaoAssinatura {
+  const lista = getSessoesAssinatura();
+  const index = lista.findIndex((s) => s.id === sessao.id);
+  if (index >= 0) {
+    lista[index] = { ...lista[index], ...sessao };
+  } else {
+    lista.push(sessao);
+  }
+  localStorage.setItem(STORAGE_KEYS.SESSOES_ASSINATURA, JSON.stringify(lista));
+  criarSessaoAssinaturaNuvem(sessao);
+  return sessao;
+}
+
+export function atualizarSessaoAssinatura(
+  id: string,
+  updates: Partial<SessaoAssinatura>
+): SessaoAssinatura | null {
+  const lista = getSessoesAssinatura();
+  const index = lista.findIndex((s) => s.id === id);
+  if (index >= 0) {
+    lista[index] = { ...lista[index], ...updates, atualizadoEm: new Date().toISOString() };
+    localStorage.setItem(STORAGE_KEYS.SESSOES_ASSINATURA, JSON.stringify(lista));
+    return lista[index];
+  }
+  return null;
+}
+
+

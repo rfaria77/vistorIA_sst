@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   Sparkles,
   Camera,
@@ -20,6 +20,9 @@ import {
   MicOff,
   PenTool,
   Sliders,
+  Zap,
+  BookOpen,
+  FileCheck2,
 } from "lucide-react";
 import {
   Apontamento,
@@ -31,11 +34,17 @@ import {
 } from "../types";
 import {
   BASE_ITENS_NR,
+  TITULOS_NR,
   calcularMultaNR28,
   formatarBRL,
 } from "../data/nr28Data";
-import { aplicarCarimboForense } from "../utils/forensicWatermark";
+import {
+  processarEOtimizarFoto,
+  ResultadoOtimizacaoFoto,
+} from "../utils/forensicWatermark";
 import { PhotoAnnotatorModal } from "./PhotoAnnotatorModal";
+import { ModalCatalogoFrases } from "./ModalCatalogoFrases";
+import { FRASES_PADRAO_SST } from "../data/frasesPadrao";
 
 interface FindingsStepProps {
   state: VistoriaState;
@@ -58,7 +67,13 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
   const [iaFeedback, setIaFeedback] = useState<string | null>(null);
 
   // Selected NR & Item
-  const nrsDisponiveis = Array.from(new Set(BASE_ITENS_NR.map((i) => i.nr))).sort();
+  const nrsDisponiveis: string[] = useMemo(() => {
+    return Array.from(new Set(BASE_ITENS_NR.map((i) => i.nr))).sort((a: string, b: string) => {
+      const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
+      const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
+      return numA - numB;
+    });
+  }, []);
   const [selectedNr, setSelectedNr] = useState("NR 35");
   const itensDaNr = BASE_ITENS_NR.filter((i) => i.nr === selectedNr);
   const [selectedItemCode, setSelectedItemCode] = useState(itensDaNr[0]?.item || "35.2.1");
@@ -69,14 +84,31 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
   const [descricaoCenario, setDescricaoCenario] = useState("");
   const [acaoCorretiva, setAcaoCorretiva] = useState("");
 
-  // Photo & Forensic state
+  // Photo & Forensic state (com redimensionamento para 1280px e 80% JPEG)
   const [fotoDataUrl, setFotoDataUrl] = useState<string | null>(null);
+  const [metricasFoto, setMetricasFoto] = useState<ResultadoOtimizacaoFoto | null>(null);
   const [carimbandoFoto, setCarimbandoFoto] = useState(false);
   const [modalAnotacaoAberta, setModalAnotacaoAberta] = useState(false);
   const [coordenadasGps, setCoordenadasGps] = useState<{ lat: number; lng: number } | null>(null);
 
-  // Voice recording state (Speech-to-text)
-  const [gravandoVoz, setGravandoVoz] = useState(false);
+  // Catálogo de Frases e Recomendações Padrão
+  const [modalFrasesAberta, setModalFrasesAberta] = useState(false);
+
+  const frasesSugeridas = useMemo(() => {
+    const exatas = FRASES_PADRAO_SST.filter((f) => f.nr === selectedNr);
+    const universais = FRASES_PADRAO_SST.filter((f) => !f.nr).slice(0, 2);
+    return [...exatas, ...universais];
+  }, [selectedNr]);
+
+  const handleAplicarFrasePadrao = (texto: string) => {
+    setAcaoCorretiva((prev) => {
+      if (!prev || !prev.trim()) return texto;
+      return `${prev.trim()}. ${texto}`;
+    });
+  };
+
+  // Voice recording state (Speech-to-text nativo para IA, Cenário e Ação)
+  const [gravandoCampo, setGravandoCampo] = useState<"ia" | "cenario" | "acao" | null>(null);
   const recognitionRef = useRef<any>(null);
 
   const fileCameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -95,8 +127,8 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
     };
   }, []);
 
-  const handleToggleVoz = () => {
-    if (gravandoVoz) {
+  const handleToggleVoz = (campo: "ia" | "cenario" | "acao") => {
+    if (gravandoCampo === campo) {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -104,8 +136,17 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
           // ignore
         }
       }
-      setGravandoVoz(false);
+      setGravandoCampo(null);
       return;
+    }
+
+    // Se já estiver gravando outro campo, encerra anterior
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort();
+      } catch {
+        // ignore
+      }
     }
 
     const SpeechRecognition =
@@ -125,38 +166,48 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
       recognition.interimResults = false;
 
       recognition.onstart = () => {
-        setGravandoVoz(true);
-        setIaFeedback("Ouvindo relato em campo... Fale a situação observada.");
+        setGravandoCampo(campo);
+        if (campo === "ia") {
+          setIaFeedback("Ouvindo relato em campo... Fale a situação observada.");
+        }
       };
 
       recognition.onresult = (event: any) => {
         const transcript = event.results?.[0]?.[0]?.transcript;
         if (transcript) {
-          setTextoIa((prev) => (prev ? `${prev} ${transcript}` : transcript));
-          setIaFeedback(`Áudio transcrito: "${transcript}"`);
+          if (campo === "ia") {
+            setTextoIa((prev) => (prev ? `${prev} ${transcript}` : transcript));
+            setIaFeedback(`Áudio transcrito: "${transcript}"`);
+          } else if (campo === "cenario") {
+            setDescricaoCenario((prev) => (prev ? `${prev.trim()} ${transcript}` : transcript));
+          } else if (campo === "acao") {
+            setAcaoCorretiva((prev) => (prev ? `${prev.trim()} ${transcript}` : transcript));
+          }
         }
-        setGravandoVoz(false);
+        setGravandoCampo(null);
       };
 
       recognition.onerror = (event: any) => {
         console.warn("Erro no reconhecimento de voz:", event?.error);
-        setGravandoVoz(false);
-        if (event?.error === "not-allowed") {
-          setIaFeedback("Permissão de microfone negada. Autorize o microfone no navegador.");
-        } else {
-          setIaFeedback("Não foi possível capturar o áudio. Tente novamente ou digite o relato.");
+        setGravandoCampo(null);
+        if (campo === "ia") {
+          if (event?.error === "not-allowed") {
+            setIaFeedback("Permissão de microfone negada. Autorize o microfone no navegador.");
+          } else {
+            setIaFeedback("Não foi possível capturar o áudio. Tente novamente ou digite o relato.");
+          }
         }
       };
 
       recognition.onend = () => {
-        setGravandoVoz(false);
+        setGravandoCampo(null);
       };
 
       recognitionRef.current = recognition;
       recognition.start();
     } catch (err) {
       console.error("Falha ao iniciar reconhecimento de voz:", err);
-      setGravandoVoz(false);
+      setGravandoCampo(null);
     }
   };
 
@@ -199,19 +250,22 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
     .filter((e) => e.status === "Conformidade")
     .reduce((acc, curr) => acc + curr.valorMax, 0);
 
-  // Handle Photo Capture
+  // Handle Photo Capture com Redimensionamento Automático no Navegador e Compressão 80% JPEG
   const handlePhotoSelected = async (file: File) => {
     try {
       setCarimbandoFoto(true);
-      const stampedUrl = await aplicarCarimboForense(file, {
+      const resultado = await processarEOtimizarFoto(file, {
         lat: coordenadasGps?.lat,
         lng: coordenadasGps?.lng,
         auditorNome: state.inspetor,
         empresaNome: state.empresa,
+        maxDim: 1280,
+        qualidade: 0.80,
       });
-      setFotoDataUrl(stampedUrl);
+      setFotoDataUrl(resultado.dataUrl);
+      setMetricasFoto(resultado);
     } catch (err) {
-      console.error("Erro ao aplicar carimbo na foto:", err);
+      console.error("Erro ao aplicar carimbo e comprimir foto:", err);
     } finally {
       setCarimbandoFoto(false);
     }
@@ -302,6 +356,7 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
     setDescricaoCenario("");
     setAcaoCorretiva("");
     setFotoDataUrl(null);
+    setMetricasFoto(null);
   };
 
   return (
@@ -386,16 +441,16 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
             <button
               type="button"
               id="btn-ditado-voz"
-              onClick={handleToggleVoz}
-              className={`px-3 h-10 rounded-xl font-bold text-xs flex items-center gap-1.5 shrink-0 border transition-all ${
-                gravandoVoz
+              onClick={() => handleToggleVoz("ia")}
+              className={`px-3 h-10 rounded-xl font-bold text-xs flex items-center gap-1.5 shrink-0 border transition-all cursor-pointer ${
+                gravandoCampo === "ia"
                   ? "bg-rose-600 text-white border-rose-700 animate-pulse shadow-md"
                   : "bg-white hover:bg-slate-50 text-slate-700 border-slate-300 shadow-xs"
               }`}
-              title={gravandoVoz ? "Parar gravação de voz" : "Ditar relato por voz (Speech-to-Text)"}
+              title={gravandoCampo === "ia" ? "Parar gravação de voz" : "Ditar relato por voz (Speech-to-Text)"}
             >
-              {gravandoVoz ? <MicOff className="w-4 h-4 text-white" /> : <Mic className="w-4 h-4 text-rose-600" />}
-              <span className="hidden xs:inline">{gravandoVoz ? "Ouvindo..." : "Ditar Voz"}</span>
+              {gravandoCampo === "ia" ? <MicOff className="w-4 h-4 text-white" /> : <Mic className="w-4 h-4 text-rose-600" />}
+              <span className="hidden xs:inline">{gravandoCampo === "ia" ? "Ouvindo..." : "Ditar Voz"}</span>
             </button>
             <button
               type="button"
@@ -482,7 +537,7 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
           {carimbandoFoto && (
             <div className="mt-2 text-center text-xs text-slate-500 flex items-center justify-center gap-1.5">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-600" />
-              <span>Aplicando Carimbo Forense SST com GPS e Carimbo Temporal...</span>
+              <span>Otimizando resolução (1280px • JPEG 80%) e aplicando Carimbo Forense...</span>
             </div>
           )}
 
@@ -507,15 +562,29 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => setFotoDataUrl(null)}
+                onClick={() => {
+                  setFotoDataUrl(null);
+                  setMetricasFoto(null);
+                }}
                 className="absolute top-2 right-2 bg-rose-600 hover:bg-rose-700 text-white p-1.5 rounded-lg shadow-sm"
                 title="Remover foto"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
-              <div className="absolute bottom-2 left-2 bg-slate-900/90 text-white text-[10px] px-2 py-0.5 rounded flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                <span>Carimbo Forense SST Aplicado</span>
+              <div className="absolute bottom-2 left-2 right-2 flex flex-wrap items-center gap-1.5">
+                <div className="bg-slate-900/90 text-white text-[10px] px-2 py-0.5 rounded flex items-center gap-1 backdrop-blur-xs border border-slate-700/50">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span>Carimbo Forense SST</span>
+                </div>
+                {metricasFoto && (
+                  <div className="bg-emerald-950/90 text-emerald-200 text-[10px] px-2 py-0.5 rounded flex items-center gap-1 font-semibold backdrop-blur-xs border border-emerald-500/40">
+                    <FileCheck2 className="w-3 h-3 text-emerald-400" />
+                    <span>
+                      Otimizada {metricasFoto.largura}x{metricasFoto.altura}px ({metricasFoto.tamanhoFinalKb} KB
+                      {metricasFoto.reducaoPercentual ? ` • -${metricasFoto.reducaoPercentual}% dados` : ""})
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -536,7 +605,7 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
               >
                 {nrsDisponiveis.map((nr) => (
                   <option key={nr} value={nr}>
-                    {nr}
+                    {TITULOS_NR[nr] || nr}
                   </option>
                 ))}
               </select>
@@ -637,29 +706,109 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
 
           {/* Text Areas */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">
-              Cenário Observado em Campo
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-slate-700">
+                Cenário Observado em Campo
+              </label>
+              <button
+                type="button"
+                id="btn-voz-cenario"
+                onClick={() => handleToggleVoz("cenario")}
+                className={`h-6.5 px-2 rounded-lg font-bold text-[11px] flex items-center gap-1 border transition-all cursor-pointer ${
+                  gravandoCampo === "cenario"
+                    ? "bg-rose-600 text-white border-rose-700 animate-pulse shadow-xs"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300"
+                }`}
+                title={gravandoCampo === "cenario" ? "Parar gravação" : "Ditar cenário por voz"}
+              >
+                {gravandoCampo === "cenario" ? (
+                  <MicOff className="w-3 h-3 text-white" />
+                ) : (
+                  <Mic className="w-3 h-3 text-rose-600" />
+                )}
+                <span>{gravandoCampo === "cenario" ? "Gravando..." : "Ditar Voz"}</span>
+              </button>
+            </div>
             <textarea
               id="textarea-cenario"
               rows={2}
               value={descricaoCenario}
               onChange={(e) => setDescricaoCenario(e.target.value)}
-              placeholder="Descreva a condição de trabalho constatada na vistoria..."
+              placeholder="Descreva a condição de trabalho constatada na vistoria ou use o microfone..."
               className="w-full p-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-sky-500"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
-              <span>Ação Corretiva Recomendada (Medida Imediata)</span>
-              {status === "Conformidade" && (
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
-                  <Lock className="w-3 h-3 text-emerald-600" />
-                  Bloqueado (Boa Prática)
-                </span>
-              )}
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-slate-700">
+                Ação Corretiva Recomendada (Medida Imediata)
+              </label>
+              <div className="flex items-center gap-2">
+                {status === "Conformidade" ? (
+                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-emerald-600" />
+                    Bloqueado (Boa Prática)
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    id="btn-voz-acao"
+                    onClick={() => handleToggleVoz("acao")}
+                    className={`h-6.5 px-2 rounded-lg font-bold text-[11px] flex items-center gap-1 border transition-all cursor-pointer ${
+                      gravandoCampo === "acao"
+                        ? "bg-rose-600 text-white border-rose-700 animate-pulse shadow-xs"
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300"
+                    }`}
+                    title={gravandoCampo === "acao" ? "Parar gravação" : "Ditar ação corretiva por voz"}
+                  >
+                    {gravandoCampo === "acao" ? (
+                      <MicOff className="w-3 h-3 text-white" />
+                    ) : (
+                      <Mic className="w-3 h-3 text-rose-600" />
+                    )}
+                    <span>{gravandoCampo === "acao" ? "Gravando..." : "Ditar Voz"}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Sugestões Rápidas de Frases e Recomendações Padrão (1 toque) */}
+            {status !== "Conformidade" && (
+              <div className="mb-2 bg-gradient-to-r from-slate-50 to-sky-50/50 border border-sky-100 rounded-xl p-2.5">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-1.5 text-slate-800 font-bold text-[11px]">
+                    <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                    <span>Recomendações Padrão ({selectedNr}):</span>
+                  </div>
+                  <button
+                    type="button"
+                    id="btn-catalogo-completo"
+                    onClick={() => setModalFrasesAberta(true)}
+                    className="text-[11px] text-sky-700 hover:text-sky-900 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                  >
+                    <BookOpen className="w-3 h-3" />
+                    <span>Ver Catálogo Completo</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                  {frasesSugeridas.map((frase) => (
+                    <button
+                      key={frase.id}
+                      type="button"
+                      onClick={() => handleAplicarFrasePadrao(frase.texto)}
+                      className="h-6.5 px-2.5 bg-white hover:bg-sky-50 text-slate-700 hover:text-sky-800 border border-slate-200 hover:border-sky-300 rounded-lg text-[10.5px] font-semibold flex items-center gap-1 whitespace-nowrap shadow-2xs transition active:scale-95 cursor-pointer"
+                      title={frase.texto}
+                    >
+                      <span className="text-amber-500">⚡</span>
+                      <span>{frase.titulo}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <textarea
               id="textarea-acao"
               rows={2}
@@ -669,7 +818,7 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
               placeholder={
                 status === "Conformidade"
                   ? "Não aplicável — Item em conformidade legal (Boa Prática dispensada de medida corretiva)."
-                  : "Descreva a orientação técnica para adequação legal..."
+                  : "Descreva a orientação técnica para adequação legal ou selecione uma frase padrão acima..."
               }
               className={`w-full p-2.5 rounded-xl text-xs transition-colors ${
                 status === "Conformidade"
@@ -796,6 +945,14 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
         onClose={() => setModalAnotacaoAberta(false)}
         imageDataUrl={fotoDataUrl || ""}
         onSaveAnnotatedImage={(newImg) => setFotoDataUrl(newImg)}
+      />
+
+      {/* Catálogo Completo de Recomendações Técnicas */}
+      <ModalCatalogoFrases
+        isOpen={modalFrasesAberta}
+        onClose={() => setModalFrasesAberta(false)}
+        selectedNrAtual={selectedNr}
+        onSelectFrase={handleAplicarFrasePadrao}
       />
     </div>
   );
