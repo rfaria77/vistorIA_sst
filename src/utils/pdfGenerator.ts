@@ -151,9 +151,10 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
 
   // Linha 2 (Y + 16)
   const cnaeTexto = estado.cnae ? `CNAE ${estado.cnae} • Grau de Risco ${estado.grauRisco || 3} (NR 04)` : `Grau de Risco ${estado.grauRisco || 3} (NR 04)`;
+  const tipoDocRotulo = estado.tipoInscricao || (estado.cnpj?.includes(".00000/") ? "CEI/CNO" : (estado.cnpj?.split("/")[0]?.length === 11 ? "CAEPF" : "CNPJ"));
   desenharCampoIdentificacao(
-    "3. CNPJ / Matrícula Unidade",
-    estado.cnpj || "00.000.000/0001-00",
+    `3. Inscrição Fiscal (${tipoDocRotulo})`,
+    estado.cnpj || "Não informado",
     col1X,
     currentY + 16,
     colWidth - 2
@@ -209,17 +210,17 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
   // ==========================================
   const passivoMin = estado.evidencias
     .filter((e) => e.status === "Não Conformidade")
-    .reduce((acc, curr) => acc + curr.valorMin, 0);
+    .reduce((acc, curr) => acc + (curr.valorMin || 0), 0);
   const passivoMax = estado.evidencias
     .filter((e) => e.status === "Não Conformidade")
-    .reduce((acc, curr) => acc + curr.valorMax, 0);
+    .reduce((acc, curr) => acc + (curr.valorMax || 0), 0);
 
   const econMin = estado.evidencias
     .filter((e) => e.status === "Conformidade")
-    .reduce((acc, curr) => acc + curr.valorMin, 0);
+    .reduce((acc, curr) => acc + (curr.valorMin || 0), 0);
   const econMax = estado.evidencias
     .filter((e) => e.status === "Conformidade")
-    .reduce((acc, curr) => acc + curr.valorMax, 0);
+    .reduce((acc, curr) => acc + (curr.valorMax || 0), 0);
 
   const cardW = (contentWidth - 4) / 2;
 
@@ -433,7 +434,7 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
   estado.evidencias.forEach((ev) => {
     if (ev.status === "Não Conformidade") {
       if (!nrMap[ev.nr]) nrMap[ev.nr] = { passivo: 0, itens: 0 };
-      nrMap[ev.nr].passivo += ev.valorMax;
+      nrMap[ev.nr].passivo += (ev.valorMax || 0);
       nrMap[ev.nr].itens += 1;
     }
   });
@@ -535,7 +536,7 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
     doc.setTextColor(51, 65, 85);
     doc.text("Requisito Legal:", margin + 4, textY);
     doc.setFont("helvetica", "normal");
-    const descLines = doc.splitTextToSize(ev.descricao, contentWidth - 44);
+    const descLines = doc.splitTextToSize(ev.descricao || ev.recomendacaoCorretiva || "", contentWidth - 44);
     doc.text(descLines, margin + 28, textY);
     textY += Math.max(4.5, descLines.length * 3.5);
 
@@ -561,7 +562,7 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
       doc.text("Impacto NR 28:", margin + 4, textY);
       doc.setTextColor(isNC ? 185 : 21, isNC ? 28 : 128, isNC ? 28 : 61);
       doc.text(
-        `${formatarBRL(ev.valorMin)} a ${formatarBRL(ev.valorMax)} ${isNC ? "(Risco de Penalidade Fiscal)" : "(Economia com Proteção)"}`,
+        `${formatarBRL(ev.valorMin || 0)} a ${formatarBRL(ev.valorMax || 0)} ${isNC ? "(Risco de Penalidade Fiscal)" : "(Economia com Proteção)"}`,
         margin + 28,
         textY
       );
@@ -569,7 +570,7 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
       doc.text("Severidade SST:", margin + 4, textY);
       doc.setTextColor(isNC ? 185 : 21, isNC ? 28 : 128, isNC ? 28 : 61);
       doc.text(
-        `Infração Grau ${ev.infracao} (${ev.tipo === "M" ? "Medicina" : "Segurança do Trabalho"}) • Prioridade ${ev.prioridade} ${isNC ? "[Ação Corretiva Exigida no Plano 5W2H]" : "[Padrão Conforme]"}` ,
+        `Infração Grau ${ev.infracao || ev.grauInfracao || "I1"} (${(ev.tipo || ev.tipoNorma) === "M" ? "Medicina" : "Segurança do Trabalho"}) • Prioridade ${ev.prioridade || "Média"} ${isNC ? "[Ação Corretiva Exigida no Plano 5W2H]" : "[Padrão Conforme]"}` ,
         margin + 28,
         textY
       );

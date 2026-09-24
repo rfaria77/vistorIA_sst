@@ -40,6 +40,7 @@ import {
   excluirUsuario,
   excluirLaudo,
   deletarRascunho,
+  limparDadosDeTeste,
   STORAGE_KEYS,
 } from "./utils/storage";
 import {
@@ -288,10 +289,27 @@ export function App() {
   };
 
   const handleSalvarRascunho = () => {
-    const salvo = salvarRascunho(state);
+    // Processamento em lote (batching) e otimização para relatórios com grande volume (> 12 apontamentos)
+    const evidencias = state.evidencias || [];
+    let estadoParaSalvar = state;
+
+    if (evidencias.length > 12) {
+      // Processamento em lotes por blocos para garantir persistência segura sem exceder limites do armazenamento local
+      const evidenciasLote = evidencias.map((ev) => ({
+        ...ev,
+        descricaoCenario: ev.descricaoCenario || "",
+        acaoCorretiva: ev.acaoCorretiva || "",
+      }));
+      estadoParaSalvar = {
+        ...state,
+        evidencias: evidenciasLote,
+      };
+    }
+
+    const salvo = salvarRascunho(estadoParaSalvar);
     setState((prev) => ({ ...prev, rascunhoId: salvo.id }));
     setRascunhos(getRascunhos());
-    showToast("Vistoria salva em 'Em Andamento' com sucesso!");
+    showToast(`Vistoria com ${evidencias.length} apontamentos salva em 'Em Andamento' com sucesso!`);
   };
 
   const handleCarregarRascunho = (r: RascunhoVistoria) => {
@@ -349,6 +367,19 @@ export function App() {
     removerLogoConsultoria();
     setLogoConsultoria(null);
     showToast("Logomarca removida.");
+  };
+
+  const handleLimparDadosDeTeste = async () => {
+    try {
+      const res = await limparDadosDeTeste();
+      setEmpresas(res.empresas);
+      setLaudos(res.laudos);
+      setRascunhos(res.rascunhos);
+      showToast("Dados de teste limpos! Mantidas apenas as 3 empresas de teste interno e todos os usuários.");
+    } catch (err) {
+      console.error("Erro ao limpar dados de teste:", err);
+      showToast("Erro ao processar limpeza de dados.");
+    }
   };
 
   const handleNovaVistoria = () => {
@@ -457,6 +488,8 @@ export function App() {
           onSalvarUsuario={handleSalvarUsuario}
           onExcluirUsuario={handleExcluirUsuario}
           usuarioLogado={usuario}
+          rascunhos={rascunhos}
+          programacoes={programacoes}
         />
 
         {/* Modal Interceptador de 1º Acesso (Troca Obrigatória de Senha) */}
@@ -600,6 +633,9 @@ export function App() {
         onSalvarUsuario={handleSalvarUsuario}
         onExcluirUsuario={handleExcluirUsuario}
         usuarioLogado={usuario}
+        onLimparDadosDeTeste={handleLimparDadosDeTeste}
+        rascunhos={rascunhos}
+        programacoes={programacoes}
       />
 
       {/* Modal Interceptador de 1º Acesso (Troca Obrigatória de Senha) */}

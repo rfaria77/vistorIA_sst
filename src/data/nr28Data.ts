@@ -41,9 +41,10 @@ export const TABELA_MULTAS_MEDICINA: Record<
   "Mais de 1000": { I1: [2241, 2520], I2: [3081, 3360], I3: [3921, 4480], I4: [5041, 5493] },
 };
 
-// Títulos oficiais resumidos das Normas Regulamentadoras vigentes
+// Títulos oficiais resumidos das Normas Regulamentadoras vigentes e históricas
 export const TITULOS_NR: Record<string, string> = {
   "NR 01": "NR 01 - Disposições Gerais e Gerenciamento de Riscos (PGR)",
+  "NR 02": "NR 02 - Inspeção Prévia (Diretrizes e Licenciamento)",
   "NR 03": "NR 03 - Embargo e Interdição (Risco Grave e Iminente)",
   "NR 04": "NR 04 - Serviços Especializados em Segurança e Medicina (SESMT)",
   "NR 05": "NR 05 - Comissão Interna de Prevenção de Acidentes e Assédio (CIPA)",
@@ -68,6 +69,7 @@ export const TITULOS_NR: Record<string, string> = {
   "NR 24": "NR 24 - Condições Sanitárias e de Conforto nos Locais de Trabalho",
   "NR 25": "NR 25 - Resíduos Industriais e Efluentes Tóxicos",
   "NR 26": "NR 26 - Sinalização de Segurança e Rotulagem Preventiva GHS",
+  "NR 27": "NR 27 - Registro Profissional do Técnico de Segurança (TST)",
   "NR 28": "NR 28 - Fiscalização e Penalidades Trabalhistas",
   "NR 29": "NR 29 - Segurança e Saúde no Trabalho Portuário",
   "NR 30": "NR 30 - Segurança e Saúde no Trabalho Aquaviário",
@@ -83,10 +85,18 @@ export const TITULOS_NR: Record<string, string> = {
 
 export const BASE_ITENS_NR: ItemNR28[] = [
   // NR 01 - Disposições Gerais e PGR
+  { nr: "NR 01", item: "1.4.1", descricao: "Deixar de cumprir as disposições legais e regulamentares sobre segurança e saúde no trabalho", infracao: "I3", tipo: "S", categoria: "Disposições Gerais" },
   { nr: "NR 01", item: "1.5.3.1", descricao: "Deixar de elaborar ou de implementar o PGR (Programa de Gerenciamento de Riscos)", infracao: "I4", tipo: "S", categoria: "PGR / GRO" },
   { nr: "NR 01", item: "1.5.4.4", descricao: "Deixar de adotar medidas de prevenção conforme ordem de prioridade legal (coletiva > administrativa > EPI)", infracao: "I3", tipo: "S", categoria: "Prevenção" },
   { nr: "NR 01", item: "1.5.5.1", descricao: "Deixar de elaborar ou de manter atualizado o inventário de riscos ocupacionais no PGR", infracao: "I3", tipo: "S", categoria: "Inventário de Riscos" },
-  { nr: "NR 01", item: "1.7.1", descricao: "Deixar de prestar informações e instruções de segurança aos trabalhadores na admissão", infracao: "I2", tipo: "S", categoria: "Treinamento" },
+  { nr: "NR 01", item: "1.5.6.1", descricao: "Deixar de elaborar o plano de ação para atendimento às medidas de prevenção do PGR", infracao: "I2", tipo: "S", categoria: "Plano de Ação" },
+  { nr: "NR 01", item: "1.6.1", descricao: "Deixar de consultar os trabalhadores quanto à percepção de riscos e melhorias no GRO", infracao: "I2", tipo: "S", categoria: "Consulta Trabalhadores" },
+  { nr: "NR 01", item: "1.7.1", descricao: "Deixar de prestar informações e instruções de segurança aos trabalhadores na admissão ou mudança de função", infracao: "I2", tipo: "S", categoria: "Treinamento" },
+
+  // NR 02 - Inspeção Prévia
+  { nr: "NR 02", item: "2.1.1", descricao: "Estabelecimento novo iniciando atividades sem realizar inspeção prévia ou comunicação aos órgãos competentes", infracao: "I3", tipo: "S", categoria: "Inspeção Prévia" },
+  { nr: "NR 02", item: "2.2.1", descricao: "Modificações substanciais em instalações ou processos sem nova avaliação ou licenciamento preventivo", infracao: "I3", tipo: "S", categoria: "Modificações Operacionais" },
+  { nr: "NR 02", item: "2.3.1", descricao: "Deixar de manter à disposição da fiscalização o certificado de inspeção prévia quando exigido", infracao: "I2", tipo: "S", categoria: "Documentação" },
 
   // NR 03 - Embargo e Interdição
   { nr: "NR 03", item: "3.2.1", descricao: "Descumprir termo de embargo ou interdição de setor, obra, máquina ou equipamento", infracao: "I4", tipo: "S", categoria: "Interdição" },
@@ -94,25 +104,29 @@ export const BASE_ITENS_NR: ItemNR28[] = [
 
   // NR 04 - SESMT
   { nr: "NR 04", item: "4.2.1", descricao: "Deixar de constituir o SESMT em conformidade com o dimensionamento do Quadro II da NR 04", infracao: "I3", tipo: "S", categoria: "SESMT" },
-  { nr: "NR 04", item: "4.4.1", descricao: "Deixar de registrar o SESMT junto ao órgão competente do Ministério do Trabalho", infracao: "I2", tipo: "S", categoria: "SESMT" },
-  { nr: "NR 04", item: "4.5.1", descricao: "Profissionais do SESMT exercendo atividades estranhas às de sua competência durante a jornada de trabalho", infracao: "I2", tipo: "S", categoria: "SESMT" },
+  { nr: "NR 04", item: "4.4.1", descricao: "Deixar de registrar o SESMT junto ao órgão competente do Ministério do Trabalho", infracao: "I2", tipo: "S", categoria: "SESMT Registro" },
+  { nr: "NR 04", item: "4.5.1", descricao: "Profissionais do SESMT exercendo atividades estranhas às de sua competência durante a jornada", infracao: "I2", tipo: "S", categoria: "SESMT Atuação" },
 
   // NR 05 - CIPA
-  { nr: "NR 05", item: "5.4.1", descricao: "Deixar de constituir CIPA ou de designar responsável nos termos da norma", infracao: "I3", tipo: "S", categoria: "CIPA" },
+  { nr: "NR 05", item: "5.4.1", descricao: "Deixar de constituir CIPA ou de designar responsável nos termos da norma", infracao: "I3", tipo: "S", categoria: "CIPA Constituição" },
   { nr: "NR 05", item: "5.6.1", descricao: "Deixar de incluir regras de conduta contra assédio sexual e violência nas normas e práticas da CIPA", infracao: "I3", tipo: "S", categoria: "Prevenção ao Assédio" },
   { nr: "NR 05", item: "5.7.1", descricao: "Deixar de realizar treinamento obrigatório para os membros titulares e suplentes da CIPA", infracao: "I2", tipo: "S", categoria: "CIPA Treinamento" },
+  { nr: "NR 05", item: "5.9.1", descricao: "Deixar de realizar reuniões ordinárias mensais da CIPA conforme calendário estabelecido", infracao: "I2", tipo: "S", categoria: "Reuniões CIPA" },
+  { nr: "NR 05", item: "5.10.1", descricao: "Deixar de realizar o processo eleitoral da CIPA nos prazos legais estabelecidos", infracao: "I2", tipo: "S", categoria: "Eleições CIPA" },
 
   // NR 06 - EPI
   { nr: "NR 06", item: "6.3.1", descricao: "Não fornecer ao empregado, gratuitamente, EPI adequado ao risco em perfeito estado de conservação", infracao: "I4", tipo: "S", categoria: "EPI Fornecimento" },
   { nr: "NR 06", item: "6.5.1", descricao: "Fornecer ou utilizar EPI sem Certificado de Aprovação (CA) válido expedido pelo órgão nacional", infracao: "I3", tipo: "S", categoria: "EPI Certificação" },
   { nr: "NR 06", item: "6.6.1", descricao: "Não registrar o fornecimento do EPI ao trabalhador em ficha, livro ou sistema eletrônico", infracao: "I2", tipo: "S", categoria: "EPI Registro" },
   { nr: "NR 06", item: "6.6.2", descricao: "Deixar de orientar e capacitar o trabalhador sobre o uso adequado, guarda e conservação do EPI", infracao: "I3", tipo: "S", categoria: "EPI Capacitação" },
+  { nr: "NR 06", item: "6.7.1", descricao: "Deixar de higienizar e realizar a manutenção periódica dos EPIs fornecidos", infracao: "I2", tipo: "S", categoria: "EPI Manutenção" },
 
-  // NR 07 - PCMSO (Medicina)
+  // NR 07 - PCMSO
   { nr: "NR 07", item: "7.5.1", descricao: "Deixar de elaborar e implementar o PCMSO conforme os riscos ocupacionais do PGR", infracao: "I3", tipo: "M", categoria: "PCMSO" },
-  { nr: "NR 07", item: "7.5.6", descricao: "Deixar de realizar exames médicos ocupacionais obrigatórios (admissional, periódico, etc.)", infracao: "I3", tipo: "M", categoria: "Exames Médicos" },
+  { nr: "NR 07", item: "7.5.6", descricao: "Deixar de realizar exames médicos ocupacionais obrigatórios (admissional, periódico, retorno, mudança)", infracao: "I3", tipo: "M", categoria: "Exames Médicos" },
   { nr: "NR 07", item: "7.5.11", descricao: "Permitir o exercício de funções de risco sem a realização prévia de exame médico com ASO apto", infracao: "I4", tipo: "M", categoria: "Aptidão Médica" },
   { nr: "NR 07", item: "7.5.19", descricao: "Não emitir Atestado de Saúde Ocupacional (ASO) em duas vias com entrega da 2ª via ao empregado", infracao: "I2", tipo: "M", categoria: "ASO" },
+  { nr: "NR 07", item: "7.6.1", descricao: "Deixar de manter o relatório analítico do PCMSO atualizado e disponível", infracao: "I2", tipo: "M", categoria: "Relatório PCMSO" },
 
   // NR 08 - Edificações
   { nr: "NR 08", item: "8.3.1", descricao: "Pisos dos locais de trabalho apresentando desníveis, saliências ou descontinuidades perigosas", infracao: "I2", tipo: "S", categoria: "Pisos e Circulação" },
@@ -129,17 +143,20 @@ export const BASE_ITENS_NR: ItemNR28[] = [
   { nr: "NR 10", item: "10.4.1", descricao: "Instalações e quadros elétricos com partes vivas expostas ou sem sinalização de advertência", infracao: "I4", tipo: "S", categoria: "Quadros Elétricos" },
   { nr: "NR 10", item: "10.8.8", descricao: "Permitir trabalho em instalações elétricas por pessoa não autorizada ou sem capacitação de 40h", infracao: "I4", tipo: "S", categoria: "Capacitação NR 10" },
   { nr: "NR 10", item: "10.2.4", descricao: "Estabelecimentos com carga instalada superior a 75 kW sem Prontuário de Instalações Elétricas (PIE)", infracao: "I3", tipo: "S", categoria: "Prontuário PIE" },
+  { nr: "NR 10", item: "10.6.1", descricao: "Trabalhos em proximidade de redes elétricas sem delimitação ou barreiras de proteção", infracao: "I4", tipo: "S", categoria: "Segurança em Alt Tensão" },
 
-  // NR 11 - Transporte e Movimentação de Materiais
+  // NR 11 - Transporte e Movimentação
   { nr: "NR 11", item: "11.1.3", descricao: "Operação de equipamentos de transporte motorizado (empilhadeira, ponte rolante) por operador sem capacitação", infracao: "I3", tipo: "S", categoria: "Operação de Cargas" },
   { nr: "NR 11", item: "11.1.5", descricao: "Equipamentos de elevação e içamento sem indicação visível da carga máxima permitida de trabalho", infracao: "I2", tipo: "S", categoria: "Içamento" },
   { nr: "NR 11", item: "11.3.1", descricao: "Empilhamento de materiais obstruindo saídas de emergência, extintores ou com risco de desabamento", infracao: "I3", tipo: "S", categoria: "Armazenamento" },
+  { nr: "NR 11", item: "11.2.1", descricao: "Cabos de aço, correntes e cintas de elevação com desgaste excessivo ou sem inspeção regular", infracao: "I3", tipo: "S", categoria: "Acessórios de Içamento" },
 
   // NR 12 - Máquinas e Equipamentos
   { nr: "NR 12", item: "12.5.1", descricao: "Zonas de perigo de máquinas e equipamentos desprovidas de sistemas de segurança físicos ou intertravados", infracao: "I4", tipo: "S", categoria: "Proteção de Máquinas" },
   { nr: "NR 12", item: "12.6.1", descricao: "Máquinas sem dispositivos de parada de emergência acessíveis, funcionais ou do tipo correto", infracao: "I3", tipo: "S", categoria: "Parada de Emergência" },
   { nr: "NR 12", item: "12.16.1", descricao: "Operação, abastecimento, limpeza ou manutenção de máquinas por trabalhador sem capacitação teórica e prática", infracao: "I3", tipo: "S", categoria: "Capacitação NR 12" },
   { nr: "NR 12", item: "12.11.1", descricao: "Inexistência de inventário e manuais de operação de máquinas e equipamentos em língua portuguesa", infracao: "I2", tipo: "S", categoria: "Documentação NR 12" },
+  { nr: "NR 12", item: "12.138", descricao: "Sistemas elétricos de comando sem proteção contra religamento acidental ou falhas", infracao: "I4", tipo: "S", categoria: "Comando Elétrico" },
 
   // NR 13 - Caldeiras e Vasos de Pressão
   { nr: "NR 13", item: "13.3.1", descricao: "Operação de caldeira ou vaso de pressão sem prontuário do fabricante, projeto ou registro de segurança", infracao: "I4", tipo: "S", categoria: "Prontuário NR 13" },
@@ -211,6 +228,9 @@ export const BASE_ITENS_NR: ItemNR28[] = [
   { nr: "NR 26", item: "26.2.1", descricao: "Produtos químicos perigosos sem rotulagem preventiva conforme Sistema Globalmente Harmonizado (GHS)", infracao: "I3", tipo: "S", categoria: "Rotulagem GHS" },
   { nr: "NR 26", item: "26.2.3", descricao: "Falta de Ficha de Dados de Segurança (FDS / FISPQ) acessível aos trabalhadores em postos com químicos", infracao: "I2", tipo: "S", categoria: "FDS / FISPQ" },
   { nr: "NR 26", item: "26.3.1", descricao: "Tubulações de fluidos perigosos sem identificação por cores de segurança padronizadas", infracao: "I2", tipo: "S", categoria: "Tubulações" },
+
+  // NR 27 - Registro Profissional (Técnico de Segurança)
+  { nr: "NR 27", item: "27.1.1", descricao: "Exercício da profissão de Técnico de Segurança do Trabalho sem o devido registro profissional no Ministério do Trabalho", infracao: "I2", tipo: "S", categoria: "Registro TST" },
 
   // NR 28 - Fiscalização e Penalidades
   { nr: "NR 28", item: "28.1.1", descricao: "Embaraço à fiscalização do trabalho, recusa na exibição de documentos ou descumprimento de notificação", infracao: "I4", tipo: "S", categoria: "Fiscalização" },

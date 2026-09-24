@@ -24,10 +24,31 @@ import {
   Copy,
   MailCheck,
   AlertCircle,
+  Search,
+  Loader2,
+  Sparkles,
+  RotateCcw,
+  Clock,
+  Activity,
 } from "lucide-react";
-import { Empresa, FaixaFuncionarios, LaudoEmitido, PerfilUsuario, UsuarioAuditor } from "../types";
+import { Empresa, FaixaFuncionarios, LaudoEmitido, PerfilUsuario, ProgramacaoRelatorio, RascunhoVistoria, TipoInscricao, UsuarioAuditor } from "../types";
 import { FAIXAS_FUNCIONARIOS, formatarBRL } from "../data/nr28Data";
+import { LISTA_CNAE_NR04, buscarCNAEPorCodigoOuDescricao } from "../data/cnaeData";
+import { CnaeSelector } from "./CnaeSelector";
 import { gerarLinkWhatsApp, gerarLinkEmailBoasVindas } from "../utils/storage";
+import {
+  consultarCNPJ,
+  formatarCNPJ,
+  formatarCAEPF,
+  formatarCEI,
+  formatarDocumentoInscricao,
+} from "../utils/cnpjLookup";
+import {
+  exportarBackupJson,
+  exportarEmpresasCsv,
+  exportarRascunhosCsv,
+  exportarLaudosCsv,
+} from "../utils/exportUtils";
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -43,6 +64,9 @@ interface AdminModalProps {
   onSalvarUsuario: (usuario: Omit<UsuarioAuditor, "id"> & { id?: string }) => void;
   onExcluirUsuario: (id: string) => void;
   usuarioLogado?: UsuarioAuditor | null;
+  onLimparDadosDeTeste?: () => Promise<void> | void;
+  rascunhos?: RascunhoVistoria[];
+  programacoes?: ProgramacaoRelatorio[];
 }
 
 interface CredenciaisModalState {
@@ -66,14 +90,69 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onSalvarUsuario,
   onExcluirUsuario,
   usuarioLogado,
+  onLimparDadosDeTeste,
+  rascunhos = [],
+  programacoes = [],
 }) => {
-  const [activeTab, setActiveTab] = useState<"usuarios" | "empresas" | "identidade" | "historico" | "norma">("usuarios");
+  const [activeTab, setActiveTab] = useState<"usuarios" | "empresas" | "identidade" | "historico" | "norma" | "backup">("usuarios");
 
   // Empresa form state
+  const [tipoInscricaoEmpresa, setTipoInscricaoEmpresa] = useState<TipoInscricao>("CNPJ");
   const [nome, setNome] = useState("");
   const [cnpj, setCnpj] = useState("");
   const [faixa, setFaixa] = useState<FaixaFuncionarios>("26 a 50");
   const [wpp, setWpp] = useState("");
+  const [cnae, setCnae] = useState("41.20-4");
+  const [cnaeDescricao, setCnaeDescricao] = useState("");
+  const [cnaesSecundariosAdmin, setCnaesSecundariosAdmin] = useState<{ codigo: string; descricao: string }[]>([]);
+  const [grauRisco, setGrauRisco] = useState<1 | 2 | 3 | 4>(3);
+  const [buscandoCnpjAdmin, setBuscandoCnpjAdmin] = useState(false);
+  const [msgCnpjAdmin, setMsgCnpjAdmin] = useState<{ tipo: "sucesso" | "erro"; texto: string } | null>(null);
+
+  const handleBuscarCnpjAdmin = async (cnpjParaBuscar?: string) => {
+    const valor = (cnpjParaBuscar !== undefined ? cnpjParaBuscar : cnpj).replace(/\D/g, "");
+    if (valor.length !== 14) {
+      setMsgCnpjAdmin({ tipo: "erro", texto: "Digite os 14 dígitos do CNPJ para buscar os dados." });
+      return;
+    }
+
+    try {
+      setBuscandoCnpjAdmin(true);
+      setMsgCnpjAdmin(null);
+      const dados = await consultarCNPJ(valor);
+
+      setCnpj(dados.cnpjFormatado);
+      if (dados.razaoSocial) setNome(dados.razaoSocial);
+      if (dados.cnaeCodigo) setCnae(dados.cnaeCodigo);
+      if (dados.cnaeDescricao) setCnaeDescricao(dados.cnaeDescricao);
+      if (dados.grauRisco) setGrauRisco(dados.grauRisco);
+      if (dados.cnaesSecundarios) setCnaesSecundariosAdmin(dados.cnaesSecundarios);
+      if (dados.telefone && !wpp) setWpp(dados.telefone);
+
+      setMsgCnpjAdmin({
+        tipo: "sucesso",
+        texto: `✓ CNPJ localizado: ${dados.razaoSocial} | CNAE ${dados.cnaeCodigo} (Grau de Risco ${dados.grauRisco})`,
+      });
+    } catch (err: any) {
+      setMsgCnpjAdmin({
+        tipo: "erro",
+        texto: err?.message || "Erro ao consultar CNPJ na base pública.",
+      });
+    } finally {
+      setBuscandoCnpjAdmin(false);
+    }
+  };
+
+  const handleCnpjAdminChange = (val: string) => {
+    const formatado = formatarDocumentoInscricao(val, tipoInscricaoEmpresa);
+    setCnpj(formatado);
+    setMsgCnpjAdmin(null);
+
+    const digitos = val.replace(/\D/g, "");
+    if (tipoInscricaoEmpresa === "CNPJ" && digitos.length === 14) {
+      handleBuscarCnpjAdmin(digitos);
+    }
+  };
 
   // Usuário form state
   const [userEditandoId, setUserEditandoId] = useState<string | null>(null);
@@ -87,6 +166,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [enviarEmailAoSalvar, setEnviarEmailAoSalvar] = useState(true);
 
   const [credenciaisModal, setCredenciaisModal] = useState<CredenciaisModalState | null>(null);
+  const [subTabHistorico, setSubTabHistorico] = useState<"atividades" | "laudos">("atividades");
 
   const [msgSucesso, setMsgSucesso] = useState<string | null>(null);
   const [msgErro, setMsgErro] = useState<string | null>(null);
@@ -100,13 +180,22 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     onSalvarEmpresa({
       nome: nome.trim(),
       cnpj: cnpj.trim() || "00.000.000/0001-00",
+      tipoInscricao: tipoInscricaoEmpresa,
       faixaFuncionarios: faixa,
       contatoWpp: wpp.trim() || "34999990000",
+      cnae,
+      cnaeDescricao: cnaeDescricao || undefined,
+      grauRisco,
     });
 
     setNome("");
     setCnpj("");
     setWpp("");
+    setCnae("41.20-4");
+    setCnaeDescricao("");
+    setCnaesSecundariosAdmin([]);
+    setTipoInscricaoEmpresa("CNPJ");
+    setMsgCnpjAdmin(null);
     setMsgSucesso("Empresa cadastrada com sucesso!");
     setTimeout(() => setMsgSucesso(null), 3000);
   };
@@ -239,7 +328,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-xs">
               <ShieldCheck className="w-4 h-4" />
@@ -266,80 +355,107 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-100 bg-slate-50/30 overflow-x-auto text-xs font-semibold">
-          <button
-            type="button"
-            id="tab-admin-usuarios"
-            onClick={() => setActiveTab("usuarios")}
-            className={`px-4 py-3 flex items-center gap-2 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
-              activeTab === "usuarios"
-                ? "border-indigo-600 text-indigo-600 font-bold bg-white"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Usuários &amp; Perfis</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-100 text-indigo-800">
-              {usuarios.length}
-            </span>
-          </button>
+        {/* Navigation Tabs - Estilo Pill Bar com shrink-0 e sem sobreposição de barra de rolagem */}
+        <div className="shrink-0 p-2 sm:p-2.5 bg-slate-100/90 border-b border-slate-200 shadow-xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+            <button
+              type="button"
+              id="tab-admin-usuarios"
+              onClick={() => setActiveTab("usuarios")}
+              className={`shrink-0 px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer ${
+                activeTab === "usuarios"
+                  ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Users className="w-4 h-4 text-indigo-600" />
+              <span>1. Usuários &amp; Perfis</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                  activeTab === "usuarios" ? "bg-indigo-100 text-indigo-800" : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {usuarios.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            id="tab-admin-empresas"
-            onClick={() => setActiveTab("empresas")}
-            className={`px-4 py-3 flex items-center gap-2 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
-              activeTab === "empresas"
-                ? "border-indigo-600 text-indigo-600 font-bold bg-white"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>Empresas ({empresas.length})</span>
-          </button>
+            <button
+              type="button"
+              id="tab-admin-empresas"
+              onClick={() => setActiveTab("empresas")}
+              className={`shrink-0 px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer ${
+                activeTab === "empresas"
+                  ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Building2 className="w-4 h-4 text-sky-600" />
+              <span>2. Empresas &amp; Clientes</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                  activeTab === "empresas" ? "bg-indigo-100 text-indigo-800" : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {empresas.length}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            id="tab-admin-identidade"
-            onClick={() => setActiveTab("identidade")}
-            className={`px-4 py-3 flex items-center gap-2 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
-              activeTab === "identidade"
-                ? "border-indigo-600 text-indigo-600 font-bold bg-white"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <ImageIcon className="w-4 h-4" />
-            <span>Logomarca do Laudo</span>
-          </button>
+            <button
+              type="button"
+              id="tab-admin-identidade"
+              onClick={() => setActiveTab("identidade")}
+              className={`shrink-0 px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer ${
+                activeTab === "identidade"
+                  ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <ImageIcon className="w-4 h-4 text-emerald-600" />
+              <span>3. Logomarca do Laudo</span>
+            </button>
 
-          <button
-            type="button"
-            id="tab-admin-historico"
-            onClick={() => setActiveTab("historico")}
-            className={`px-4 py-3 flex items-center gap-2 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
-              activeTab === "historico"
-                ? "border-indigo-600 text-indigo-600 font-bold bg-white"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <History className="w-4 h-4" />
-            <span>Histórico de Laudos ({laudos.length})</span>
-          </button>
+            <button
+              type="button"
+              id="tab-admin-historico"
+              onClick={() => setActiveTab("historico")}
+              className={`shrink-0 px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer ${
+                activeTab === "historico"
+                  ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <History className="w-4 h-4 text-amber-600" />
+              <span>4. Histórico ({laudos.length})</span>
+            </button>
 
-          <button
-            type="button"
-            id="tab-admin-norma"
-            onClick={() => setActiveTab("norma")}
-            className={`px-4 py-3 flex items-center gap-2 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
-              activeTab === "norma"
-                ? "border-indigo-600 text-indigo-600 font-bold bg-white"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <Info className="w-4 h-4" />
-            <span>Regras NR 28</span>
-          </button>
+            <button
+              type="button"
+              id="tab-admin-norma"
+              onClick={() => setActiveTab("norma")}
+              className={`shrink-0 px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer ${
+                activeTab === "norma"
+                  ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Info className="w-4 h-4 text-purple-600" />
+              <span>5. Regras NR 28</span>
+            </button>
+
+            <button
+              type="button"
+              id="tab-admin-backup"
+              onClick={() => setActiveTab("backup")}
+              className={`shrink-0 px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer ${
+                activeTab === "backup"
+                  ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Download className="w-4 h-4 text-rose-600" />
+              <span>6. Backup &amp; Exportação (JSON/CSV)</span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Body */}
@@ -708,44 +824,295 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           {activeTab === "empresas" && (
             <div className="space-y-4">
               <form onSubmit={handleCadastrarEmpresa} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
-                <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                  <PlusCircle className="w-4 h-4 text-indigo-600" />
-                  <span>Cadastrar Empresa para Vistorias Rápidas</span>
-                </h3>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <PlusCircle className="w-4 h-4 text-indigo-600" />
+                    <span>Cadastrar Empresa / Produtor para Vistorias Rápidas</span>
+                  </h3>
+
+                  {/* Seletor de Tipo de Documento */}
+                  <div className="inline-flex p-0.5 bg-slate-200/70 rounded-lg border border-slate-300">
+                    <button
+                      type="button"
+                      id="btn-admin-tipo-cnpj"
+                      onClick={() => {
+                        setTipoInscricaoEmpresa("CNPJ");
+                        setMsgCnpjAdmin(null);
+                        if (cnpj) setCnpj(formatarDocumentoInscricao(cnpj, "CNPJ"));
+                      }}
+                      className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer ${
+                        tipoInscricaoEmpresa === "CNPJ"
+                          ? "bg-white text-indigo-700 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      🏢 CNPJ
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-admin-tipo-caepf"
+                      onClick={() => {
+                        setTipoInscricaoEmpresa("CAEPF");
+                        setMsgCnpjAdmin(null);
+                        if (cnpj) setCnpj(formatarDocumentoInscricao(cnpj, "CAEPF"));
+                      }}
+                      className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer ${
+                        tipoInscricaoEmpresa === "CAEPF"
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      🌾 CAEPF (Rural / PF)
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-admin-tipo-cei"
+                      onClick={() => {
+                        setTipoInscricaoEmpresa("CEI/CNO");
+                        setMsgCnpjAdmin(null);
+                        if (cnpj) setCnpj(formatarDocumentoInscricao(cnpj, "CEI/CNO"));
+                      }}
+                      className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition cursor-pointer ${
+                        tipoInscricaoEmpresa === "CEI/CNO"
+                          ? "bg-amber-600 text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      🏗️ CEI / CNO
+                    </button>
+                  </div>
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Campo de Documento de Inscrição */}
+                  <div className="sm:col-span-2 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                    <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>
+                          {tipoInscricaoEmpresa === "CAEPF"
+                            ? "Número do CAEPF (14 dígitos - Produtor Rural / PF)"
+                            : tipoInscricaoEmpresa === "CEI/CNO"
+                            ? "Matrícula CEI / CNO (12 dígitos - Obras)"
+                            : "CNPJ da Empresa (Consulta Automática Receita Federal)"}
+                        </span>
+                      </label>
+                      {tipoInscricaoEmpresa === "CNPJ" && (
+                        <span className="text-[10.5px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200 flex items-center gap-1">
+                          <Sparkles className="w-3 h-3 text-indigo-600" /> Consulta Receita Federal
+                        </span>
+                      )}
+                      {tipoInscricaoEmpresa === "CAEPF" && (
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded">
+                          Produtor Rural / PF
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                      <input
+                        type="text"
+                        id="admin-input-cnpj"
+                        value={cnpj}
+                        onChange={(e) => handleCnpjAdminChange(e.target.value)}
+                        placeholder={
+                          tipoInscricaoEmpresa === "CAEPF"
+                            ? "000.000.000/000-00"
+                            : tipoInscricaoEmpresa === "CEI/CNO"
+                            ? "00.000.00000/00"
+                            : "00.000.000/0001-00 (Digite ou cole o CNPJ)"
+                        }
+                        className="flex-1 h-10 px-3 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm text-slate-800 focus:ring-2 focus:ring-indigo-500 font-medium tracking-wide shadow-2xs"
+                      />
+                      {tipoInscricaoEmpresa === "CNPJ" && (
+                        <button
+                          type="button"
+                          id="btn-admin-buscar-cnpj"
+                          onClick={() => handleBuscarCnpjAdmin()}
+                          disabled={buscandoCnpjAdmin}
+                          className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs disabled:opacity-60 shrink-0"
+                          title="Puxar Razão Social, CNAE, Grau de Risco e Telefone da Receita Federal"
+                        >
+                          {buscandoCnpjAdmin ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                              <span>Consultando Receita...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Search className="w-3.5 h-3.5 text-white" />
+                              <span>Puxar Dados da Receita</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+
+                    {tipoInscricaoEmpresa === "CNPJ" && !msgCnpjAdmin && (
+                      <p className="mt-1.5 text-[11px] text-slate-500 flex items-center gap-1">
+                        <span>💡 Digite ou cole o CNPJ e clique em <strong>Puxar Dados da Receita</strong> para preencher Razão Social, CNAE oficial, Grau de Risco e Telefone em 1 segundo.</span>
+                      </p>
+                    )}
+
+                    {/* Dica para CAEPF */}
+                    {tipoInscricaoEmpresa === "CAEPF" && (
+                      <div className="mt-1.5 p-2 bg-emerald-50 border border-emerald-200 rounded-lg text-[10.5px] text-emerald-900">
+                        <p className="font-semibold mb-1">🌾 Atalhos Rápidos CNAE Rural (NR-31 e NR-04):</p>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCnae("01.11-3");
+                              setCnaeDescricao("Cultivo de cereais (soja, milho, trigo, arroz)");
+                              setGrauRisco(3);
+                            }}
+                            className="px-1.5 py-0.5 bg-white border border-emerald-300 text-emerald-800 rounded text-[9.5px] font-bold hover:bg-emerald-100 cursor-pointer"
+                          >
+                            🌾 Soja/Milho (01.11-3)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCnae("01.51-2");
+                              setCnaeDescricao("Criação de bovinos para corte e leite (pecuária)");
+                              setGrauRisco(3);
+                            }}
+                            className="px-1.5 py-0.5 bg-white border border-emerald-300 text-emerald-800 rounded text-[9.5px] font-bold hover:bg-emerald-100 cursor-pointer"
+                          >
+                            🐄 Pecuária (01.51-2)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCnae("01.31-8");
+                              setCnaeDescricao("Cultivo de café (cafeicultura)");
+                              setGrauRisco(3);
+                            }}
+                            className="px-1.5 py-0.5 bg-white border border-emerald-300 text-emerald-800 rounded text-[9.5px] font-bold hover:bg-emerald-100 cursor-pointer"
+                          >
+                            ☕ Café (01.31-8)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCnae("01.61-0");
+                              setCnaeDescricao("Atividades de apoio à agricultura");
+                              setGrauRisco(3);
+                            }}
+                            className="px-1.5 py-0.5 bg-white border border-emerald-300 text-emerald-800 rounded text-[9.5px] font-bold hover:bg-emerald-100 cursor-pointer"
+                          >
+                            🚜 Apoio Agrícola (01.61-0)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Dica para CEI/CNO */}
+                    {tipoInscricaoEmpresa === "CEI/CNO" && (
+                      <div className="mt-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10.5px] text-amber-900">
+                        <p className="font-semibold mb-1">🏗️ Atalhos Obras / Construção:</p>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCnae("41.20-4");
+                              setCnaeDescricao("Construção de edifícios residenciais e comerciais");
+                              setGrauRisco(3);
+                            }}
+                            className="px-1.5 py-0.5 bg-white border border-amber-300 text-amber-800 rounded text-[9.5px] font-bold hover:bg-amber-100 cursor-pointer"
+                          >
+                            🏗️ Edifícios (41.20-4)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCnae("43.99-1");
+                              setCnaeDescricao("Serviços especializados para construção (andaimes)");
+                              setGrauRisco(4);
+                            }}
+                            className="px-1.5 py-0.5 bg-white border border-amber-300 text-amber-800 rounded text-[9.5px] font-bold hover:bg-amber-100 cursor-pointer"
+                          >
+                            🪜 Serviços Especiais (43.99-1)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {msgCnpjAdmin && (
+                      <div
+                        className={`mt-1.5 p-1.5 rounded-lg text-[10.5px] flex items-center gap-1.5 ${
+                          msgCnpjAdmin.tipo === "sucesso"
+                            ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
+                            : "bg-amber-50 text-amber-900 border border-amber-200"
+                        }`}
+                      >
+                        {msgCnpjAdmin.tipo === "sucesso" ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        )}
+                        <span className="truncate">{msgCnpjAdmin.texto}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Razão Social / Nome do Produtor */}
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Razão Social / Nome Fantasia
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                      <span>
+                        {tipoInscricaoEmpresa === "CAEPF"
+                          ? "Nome do Produtor / Fazenda / PF *"
+                          : tipoInscricaoEmpresa === "CEI/CNO"
+                          ? "Nome da Obra / Construtora *"
+                          : "Razão Social / Nome Fantasia *"}
+                      </span>
+                      {nome && (
+                        <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
+                          <Sparkles className="w-2.5 h-2.5" /> Preenchido
+                        </span>
+                      )}
                     </label>
                     <input
                       type="text"
+                      id="admin-input-nome"
                       value={nome}
                       onChange={(e) => setNome(e.target.value)}
-                      placeholder="Ex: Frigorífico Boi Gordo S/A"
-                      className="w-full h-9 px-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-sky-500"
+                      placeholder={
+                        tipoInscricaoEmpresa === "CAEPF"
+                          ? "Ex: Fazenda Santa Maria - João da Silva"
+                          : tipoInscricaoEmpresa === "CEI/CNO"
+                          ? "Ex: Obra Residencial Parque das Flores"
+                          : "Ex: Frigorífico Boi Gordo S/A"
+                      }
+                      className="w-full h-9 px-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-sky-500 font-medium"
                       required
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      CNPJ
-                    </label>
-                    <input
-                      type="text"
-                      value={cnpj}
-                      onChange={(e) => setCnpj(e.target.value)}
-                      placeholder="00.000.000/0001-00"
-                      className="w-full h-9 px-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-sky-500"
+                  {/* CNAE e Grau de Risco com Catálogo Completo */}
+                  <div className="sm:col-span-2">
+                    <CnaeSelector
+                      id="admin-cnae-selector"
+                      value={cnae}
+                      descricao={cnaeDescricao}
+                      grauRisco={grauRisco}
+                      cnaesSecundarios={cnaesSecundariosAdmin}
+                      puxadoReceita={Boolean(msgCnpjAdmin && msgCnpjAdmin.tipo === "sucesso")}
+                      onChange={(novoCod, novaDesc, novoGr) => {
+                        setCnae(novoCod);
+                        setCnaeDescricao(novaDesc);
+                        setGrauRisco(novoGr);
+                      }}
                     />
                   </div>
 
+                  {/* Quadro de Funcionários */}
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                       Quadro de Funcionários (NR 28)
                     </label>
                     <select
+                      id="admin-select-faixa"
                       value={faixa}
                       onChange={(e) => setFaixa(e.target.value as FaixaFuncionarios)}
                       className="w-full h-9 px-3 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-sky-500"
@@ -758,12 +1125,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     </select>
                   </div>
 
-                  <div>
+                  {/* WhatsApp */}
+                  <div className="sm:col-span-2">
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
                       WhatsApp do Responsável
                     </label>
                     <input
                       type="text"
+                      id="admin-input-wpp"
                       value={wpp}
                       onChange={(e) => setWpp(e.target.value)}
                       placeholder="Ex: 11999998888"
@@ -778,30 +1147,75 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Salvar Empresa</span>
+                    <span>Salvar Empresa / Produtor</span>
                   </button>
                 </div>
               </form>
 
               <div>
-                <h4 className="text-xs font-bold text-slate-700 mb-2">Empresas Cadastradas ({empresas.length})</h4>
-                <div className="space-y-2">
-                  {empresas.map((emp) => (
-                    <div
-                      key={emp.id}
-                      className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-xs"
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                  <h4 className="text-xs font-bold text-slate-700">Empresas e Produtores Cadastrados ({empresas.length})</h4>
+                  {onLimparDadosDeTeste && (
+                    <button
+                      type="button"
+                      id="btn-admin-limpar-dados-teste"
+                      onClick={async () => {
+                        if (
+                          window.confirm(
+                            "ATENÇÃO: Deseja redefinir o cadastro para apenas as 3 empresas padrão de teste interno (CNPJ, CAEPF e CEI/CNO) e limpar laudos/rascunhos de teste?\n\n🔒 SEUS USUÁRIOS CADASTRADOS SERÃO 100% PRESERVADOS (nenhum usuário será apagado)."
+                          )
+                        ) {
+                          await onLimparDadosDeTeste();
+                          setMsgSucesso("Dados de teste limpos! Mantidas apenas as 3 empresas de teste interno. Usuários preservados.");
+                          setTimeout(() => setMsgSucesso(null), 4000);
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-[10.5px] font-bold flex items-center gap-1.5 transition cursor-pointer"
+                      title="Redefinir cadastro para as 3 empresas de teste interno (Mantém todos os Usuários)"
                     >
-                      <div>
-                        <h5 className="text-xs font-bold text-slate-900">{emp.nome}</h5>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          CNPJ: {emp.cnpj} • Faixa: {emp.faixaFuncionarios} funcionários
-                        </p>
+                      <RotateCcw className="w-3 h-3 text-amber-700" />
+                      <span>Redefinir para 3 Empresas de Teste</span>
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {empresas.map((emp) => {
+                    const tipoDoc = emp.tipoInscricao || (emp.cnpj.includes(".00000/") ? "CEI/CNO" : (emp.cnpj.split("/")[0]?.length === 11 ? "CAEPF" : "CNPJ"));
+                    const isCaepf = tipoDoc === "CAEPF";
+                    const isCei = tipoDoc === "CEI/CNO";
+
+                    return (
+                      <div
+                        key={emp.id}
+                        className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-xs"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h5 className="text-xs font-bold text-slate-900">{emp.nome}</h5>
+                            <span
+                              className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                                isCaepf
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : isCei
+                                  ? "bg-amber-100 text-amber-800 border-amber-300"
+                                  : "bg-sky-100 text-sky-800 border-sky-300"
+                              }`}
+                            >
+                              {tipoDoc}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500">
+                            <span className="font-mono text-slate-700">{emp.cnpj}</span> • Faixa: {emp.faixaFuncionarios} funcionários
+                            {emp.cnae && ` • CNAE ${emp.cnae}${emp.cnaeDescricao ? ` - ${emp.cnaeDescricao}` : ""}`}
+                            {emp.grauRisco && ` (Grau ${emp.grauRisco})`}
+                          </p>
+                        </div>
+                        <span className="text-[11px] font-mono text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                          {emp.contatoWpp}
+                        </span>
                       </div>
-                      <span className="text-[11px] font-mono text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        {emp.contatoWpp}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -858,76 +1272,192 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: HISTÓRICO DE LAUDOS */}
+          {/* TAB 4: HISTÓRICO DE ATIVIDADES & LAUDOS */}
           {activeTab === "historico" && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-700 mb-2 flex items-center justify-between">
-                <span>Histórico Geral de Laudos Emitidos ({laudos.length})</span>
-                <span className="text-[10px] text-slate-400 font-normal">
-                  Exclusão permitida apenas para Administradores
-                </span>
-              </h4>
-
-              {laudos.length === 0 ? (
-                <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
-                  Nenhum laudo emitido até o momento.
+            <div className="space-y-4">
+              {/* Sub-Header & Sub-Tabs */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-amber-600" />
+                    <span>Rastreabilidade &amp; Histórico da Equipe</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Acompanhe o log de atividades (criação e modificação de rascunhos e emissão de laudos por inspetor).
+                  </p>
                 </div>
-              ) : (
-                laudos.map((laudo) => (
-                  <div
-                    key={laudo.id}
-                    className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-2 shadow-xs"
+
+                <div className="inline-flex p-0.5 bg-slate-200/80 rounded-lg border border-slate-300 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSubTabHistorico("atividades")}
+                    className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition cursor-pointer flex items-center gap-1.5 ${
+                      subTabHistorico === "atividades"
+                        ? "bg-white text-indigo-700 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
                   >
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-slate-900">
-                          #{laudo.numero} — {laudo.empresa}
-                        </span>
-                        <span className="text-[10px] text-slate-400">({laudo.data})</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Auditor: {laudo.inspetor} • {laudo.totalItens} itens • Passivo: {formatarBRL(laudo.passivoRiscoMax)}
-                      </p>
-                    </div>
+                    <Activity className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Log de Atividades ({ (laudos?.length || 0) + (rascunhos?.length || 0) })</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubTabHistorico("laudos")}
+                    className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition cursor-pointer flex items-center gap-1.5 ${
+                      subTabHistorico === "laudos"
+                        ? "bg-white text-indigo-700 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Laudos Emitidos ({laudos.length})</span>
+                  </button>
+                </div>
+              </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <a
-                        href={gerarLinkWhatsApp(
-                          "11999999999",
-                          laudo.empresa,
-                          laudo.passivoRiscoMax,
-                          laudo.economiaGeradaMax,
-                          laudo.totalNaoConformidades
-                        )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg cursor-pointer"
-                        title="Reenviar pelo WhatsApp"
+              {/* SubTab 1: Log de Atividades Unificadas */}
+              {subTabHistorico === "atividades" && (
+                <div className="space-y-2.5">
+                  {(() => {
+                    const atividadesUnificadas = [
+                      ...(laudos || []).map((l) => ({
+                        id: `laudo-${l.id}`,
+                        tipo: "laudo" as const,
+                        empresa: l.empresa,
+                        data: l.data || new Date().toISOString(),
+                        usuario: l.inspetor || "Inspetor Técnico",
+                        titulo: `Laudo Pericial Emitido #${l.numero}`,
+                        detalhes: `${l.totalItens} itens • Passivo: ${formatarBRL(l.passivoRiscoMax)}`,
+                        badgeTexto: "Laudo Emitido",
+                        badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-300",
+                        icon: <FileText className="w-4 h-4 text-emerald-600" />,
+                      })),
+                      ...(rascunhos || []).map((r) => ({
+                        id: `rascunho-${r.id}`,
+                        tipo: "rascunho" as const,
+                        empresa: r.empresa || r.estado?.empresa || "Empresa Não Informada",
+                        data: r.dataAtualizacao || new Date().toISOString(),
+                        usuario: r.estado?.inspetor || r.estado?.auditorNome || "Inspetor Técnico",
+                        titulo: `Rascunho Salvo / Atualizado`,
+                        detalhes: `${r.estado?.evidencias?.length || 0} apontamentos em andamento`,
+                        badgeTexto: "Rascunho",
+                        badgeClass: "bg-amber-100 text-amber-900 border-amber-300",
+                        icon: <Clock className="w-4 h-4 text-amber-600" />,
+                      })),
+                    ].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+
+                    if (atividadesUnificadas.length === 0) {
+                      return (
+                        <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+                          Nenhuma atividade ou rascunho registrado até o momento.
+                        </div>
+                      );
+                    }
+
+                    return atividadesUnificadas.map((atv) => (
+                      <div
+                        key={atv.id}
+                        className="p-3.5 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-3 shadow-xs hover:border-slate-300 transition-all"
                       >
-                        <Send className="w-4 h-4" />
-                      </a>
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
+                            {atv.icon}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold text-slate-900">
+                                {atv.empresa}
+                              </span>
+                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${atv.badgeClass}`}>
+                                {atv.badgeTexto}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                • {atv.data}
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-medium text-slate-700 mt-0.5">
+                              {atv.titulo}
+                            </p>
+                            <p className="text-[10.5px] text-slate-500 mt-0.5">
+                              Responsável / Auditor: <strong className="text-slate-800">{atv.usuario}</strong> • {atv.detalhes}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              )}
 
-                      {/* Botão de Excluir Laudo (Função Exclusiva para ADM) */}
-                      {onExcluirLaudo && (
-                        <button
-                          type="button"
-                          id={`btn-admin-excluir-laudo-${laudo.id}`}
-                          onClick={() => {
-                            if (window.confirm(`ATENÇÃO: Deseja realmente excluir permanentemente o Laudo #${laudo.numero} da empresa "${laudo.empresa}"?\n\nEsta operação é irreversível e permitida apenas para Administradores.`)) {
-                              onExcluirLaudo(laudo.id);
-                              setMsgSucesso(`Laudo #${laudo.numero} excluído do banco de dados.`);
-                              setTimeout(() => setMsgSucesso(null), 3000);
-                            }
-                          }}
-                          className="p-1.5 text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg cursor-pointer transition-colors"
-                          title="Excluir Laudo Permanentemente (ADM)"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+              {/* SubTab 2: Laudos Emitidos */}
+              {subTabHistorico === "laudos" && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-700">Laudos Periciais Arquivados ({laudos.length})</span>
+                    <span className="text-[10px] text-slate-400">Exclusão permitida apenas para Administradores</span>
                   </div>
-                ))
+
+                  {laudos.length === 0 ? (
+                    <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+                      Nenhum laudo emitido até o momento.
+                    </div>
+                  ) : (
+                    laudos.map((laudo) => (
+                      <div
+                        key={laudo.id}
+                        className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-2 shadow-xs"
+                      >
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-slate-900">
+                              #{laudo.numero} — {laudo.empresa}
+                            </span>
+                            <span className="text-[10px] text-slate-400">({laudo.data})</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Auditor: {laudo.inspetor} • {laudo.totalItens} itens • Passivo: {formatarBRL(laudo.passivoRiscoMax)}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <a
+                            href={gerarLinkWhatsApp(
+                              "11999999999",
+                              laudo.empresa,
+                              laudo.passivoRiscoMax,
+                              laudo.economiaGeradaMax || 0,
+                              laudo.totalNaoConformidades
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg cursor-pointer"
+                            title="Reenviar pelo WhatsApp"
+                          >
+                            <Send className="w-4 h-4" />
+                          </a>
+
+                          {onExcluirLaudo && (
+                            <button
+                              type="button"
+                              id={`btn-admin-excluir-laudo-${laudo.id}`}
+                              onClick={() => {
+                                if (window.confirm(`ATENÇÃO: Deseja realmente excluir permanentemente o Laudo #${laudo.numero} da empresa "${laudo.empresa}"?\n\nEsta operação é irreversível e permitida apenas para Administradores.`)) {
+                                  onExcluirLaudo(laudo.id);
+                                  setMsgSucesso(`Laudo #${laudo.numero} excluído do banco de dados.`);
+                                  setTimeout(() => setMsgSucesso(null), 3000);
+                                }
+                              }}
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg cursor-pointer transition-colors"
+                              title="Excluir Laudo Permanentemente (ADM)"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -948,6 +1478,155 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <li><b>Quadro de Funcionários:</b> O porte da empresa graduado em faixas (de 1-10 até mais de 1000 empregados).</li>
                 <li><b>Valor Base da UFIR:</b> Base de conversão monetária oficializada pelo Ministério do Trabalho em R$ 1,0641.</li>
               </ul>
+            </div>
+          )}
+
+          {/* TAB 6: BACKUP & EXPORTAÇÃO EM LOTE (JSON / CSV) */}
+          {activeTab === "backup" && (
+            <div className="space-y-5">
+              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-4 sm:p-5 rounded-2xl shadow-md space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-600/80 flex items-center justify-center text-white shadow-inner">
+                    <Download className="w-5 h-5 text-indigo-200" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold flex items-center gap-2">
+                      <span>Central de Backup &amp; Exportação Pericial</span>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                        Segurança Extra
+                      </span>
+                    </h3>
+                    <p className="text-xs text-indigo-200/80">
+                      Exportação manual em lote de todos os rascunhos em andamento, empresas cadastradas e laudos ativos para segurança pericial e auditoria.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-3 border-t border-indigo-800/60 text-center">
+                  <div className="bg-indigo-950/60 p-2.5 rounded-xl border border-indigo-800/40">
+                    <span className="block text-lg font-black text-white">{rascunhos?.length || 0}</span>
+                    <span className="text-[10px] text-indigo-300 font-medium">Rascunhos</span>
+                  </div>
+                  <div className="bg-indigo-950/60 p-2.5 rounded-xl border border-indigo-800/40">
+                    <span className="block text-lg font-black text-white">{empresas.length}</span>
+                    <span className="text-[10px] text-indigo-300 font-medium">Empresas</span>
+                  </div>
+                  <div className="bg-indigo-950/60 p-2.5 rounded-xl border border-indigo-800/40">
+                    <span className="block text-lg font-black text-white">{laudos.length}</span>
+                    <span className="text-[10px] text-indigo-300 font-medium">Laudos Ativos</span>
+                  </div>
+                  <div className="bg-indigo-950/60 p-2.5 rounded-xl border border-indigo-800/40">
+                    <span className="block text-lg font-black text-white">{usuarios.length}</span>
+                    <span className="text-[10px] text-indigo-300 font-medium">Usuários</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* CARD 1: BACKUP COMPLETO JSON */}
+              <div className="bg-white border-2 border-indigo-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-indigo-600" />
+                      <span>Backup Pericial Completo (Formato JSON)</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      Gera e baixa instantaneamente um arquivo JSON consolidado contendo toda a base de dados (empresas, rascunhos, laudos assinados, perfis de usuários e programações). Ideal para arquivamento externo e segurança pericial.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    id="btn-exportar-json-geral"
+                    onClick={() => {
+                      exportarBackupJson(empresas, rascunhos || [], laudos, usuarios, programacoes || []);
+                      setMsgSucesso("Backup pericial completo em JSON gerado e baixado com sucesso!");
+                      setTimeout(() => setMsgSucesso(null), 3500);
+                    }}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm transition cursor-pointer shrink-0"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Baixar Backup JSON</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD 2: EXPORTAÇÃO EM CSV (EXCEL) */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 space-y-3">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-emerald-600" />
+                    <span>Exportação Individual em Lote para Planilhas (CSV / Excel)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Selecione o módulo específico para exportar os registros formatados em CSV com codificação UTF-8 compatível com Microsoft Excel e LibreOffice.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  {/* Botão Rascunhos CSV */}
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-3 shadow-2xs">
+                    <div>
+                      <span className="block text-xs font-bold text-slate-800">Rascunhos / Em Andamento</span>
+                      <span className="text-[10px] text-slate-500">{rascunhos?.length || 0} rascunhos salvos</span>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-export-rascunhos-csv"
+                      onClick={() => {
+                        exportarRascunhosCsv(rascunhos || []);
+                        setMsgSucesso("Planilha CSV de rascunhos exportada com sucesso!");
+                        setTimeout(() => setMsgSucesso(null), 3000);
+                      }}
+                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer border border-slate-300"
+                    >
+                      <Download className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Exportar Rascunhos (CSV)</span>
+                    </button>
+                  </div>
+
+                  {/* Botão Empresas CSV */}
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-3 shadow-2xs">
+                    <div>
+                      <span className="block text-xs font-bold text-slate-800">Empresas &amp; Clientes</span>
+                      <span className="text-[10px] text-slate-500">{empresas.length} empresas cadastradas</span>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-export-empresas-csv"
+                      onClick={() => {
+                        exportarEmpresasCsv(empresas);
+                        setMsgSucesso("Planilha CSV de empresas exportada com sucesso!");
+                        setTimeout(() => setMsgSucesso(null), 3000);
+                      }}
+                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer border border-slate-300"
+                    >
+                      <Building2 className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Exportar Empresas (CSV)</span>
+                    </button>
+                  </div>
+
+                  {/* Botão Laudos Ativos CSV */}
+                  <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between gap-3 shadow-2xs">
+                    <div>
+                      <span className="block text-xs font-bold text-slate-800">Laudos Ativos / Emitidos</span>
+                      <span className="text-[10px] text-slate-500">{laudos.length} laudos arquivados</span>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-export-laudos-csv"
+                      onClick={() => {
+                        exportarLaudosCsv(laudos);
+                        setMsgSucesso("Planilha CSV de laudos ativos exportada com sucesso!");
+                        setTimeout(() => setMsgSucesso(null), 3000);
+                      }}
+                      className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] rounded-lg flex items-center justify-center gap-1.5 transition cursor-pointer border border-slate-300"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Exportar Laudos (CSV)</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

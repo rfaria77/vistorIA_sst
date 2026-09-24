@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import {
   Apontamento,
+  FaixaFuncionarios,
   GrauInfracao,
   Prioridade,
   StatusApontamento,
@@ -68,7 +69,7 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
 
   // Selected NR & Item
   const nrsDisponiveis: string[] = useMemo(() => {
-    return Array.from(new Set(BASE_ITENS_NR.map((i) => i.nr))).sort((a: string, b: string) => {
+    return Array.from(new Set(BASE_ITENS_NR.map((i) => i.nr).filter((n): n is string => Boolean(n)))).sort((a: string, b: string) => {
       const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
       const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
       return numA - numB;
@@ -239,16 +240,16 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
 
   // Current active item object
   const currentItem = BASE_ITENS_NR.find((i) => i.item === selectedItemCode) || BASE_ITENS_NR[0];
-  const [valMin, valMax] = calcularMultaNR28(currentItem.infracao, state.faixa, currentItem.tipo);
+  const [valMin, valMax] = calcularMultaNR28(currentItem.infracao || currentItem.grau || "I1", (state.faixa || "1 a 10") as FaixaFuncionarios, currentItem.tipo);
 
   // KPIs
   const passivoRiscoTotal = state.evidencias
     .filter((e) => e.status === "Não Conformidade")
-    .reduce((acc, curr) => acc + curr.valorMax, 0);
+    .reduce((acc, curr) => acc + (curr.valorMax || 0), 0);
 
   const economiaGeradaTotal = state.evidencias
     .filter((e) => e.status === "Conformidade")
-    .reduce((acc, curr) => acc + curr.valorMax, 0);
+    .reduce((acc, curr) => acc + (curr.valorMax || 0), 0);
 
   // Handle Photo Capture com Redimensionamento Automático no Navegador e Compressão 80% JPEG
   const handlePhotoSelected = async (file: File) => {
@@ -903,10 +904,10 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
 
                         <div className="flex items-center gap-3 mt-1 text-[11px]">
                           <span className="text-slate-500 font-medium">
-                            Grau {ev.infracao} ({ev.tipo === "M" ? "Medicina" : "Segurança"})
+                            Grau {ev.infracao || ev.grauInfracao || "I1"} ({ev.tipo === "M" ? "Medicina" : "Segurança"})
                           </span>
                           <span className={`font-bold ${isNC ? "text-rose-600" : "text-emerald-700"}`}>
-                            {formatarBRL(ev.valorMin)} a {formatarBRL(ev.valorMax)}
+                            {formatarBRL(ev.valorMin || 0)} a {formatarBRL(ev.valorMax || 0)}
                           </span>
                         </div>
                       </div>

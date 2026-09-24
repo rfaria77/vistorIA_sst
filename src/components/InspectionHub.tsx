@@ -27,8 +27,11 @@ import {
   EyeOff,
   BarChart3,
   CalendarDays,
+  Sparkles,
+  Unlock,
 } from "lucide-react";
 import { PWAInstallButton } from "./PWAInstallButton";
+import { InteractiveTour } from "./InteractiveTour";
 import {
   LaudoEmitido,
   RascunhoVistoria,
@@ -44,6 +47,7 @@ import {
   calcularDiasSemEdicao,
   getProgramacoes,
   calcularStatusPrazo,
+  salvarRascunho,
 } from "../utils/storage";
 import { isBiometriaHabilitada } from "../utils/biometrics";
 import { formatarBRL } from "../data/nr28Data";
@@ -78,6 +82,53 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
   const [laudoVisualizando, setLaudoVisualizando] = useState<LaudoEmitido | null>(null);
   const [gerandoPdfId, setGerandoPdfId] = useState<string | null>(null);
   const [mensagemAviso, setMensagemAviso] = useState<string | null>(null);
+  const [tourAberto, setTourAberto] = useState(false);
+
+  // Verificação de primeiro acesso / usuário recém-logado para abrir o Tour automaticamente
+  useEffect(() => {
+    // Se o usuário estiver no modal de primeiro acesso (troca de senha), não abre o tour ainda
+    if (usuario.primeiroAcesso) return;
+
+    try {
+      const chaveTour = `vistorias_sst_hub_tour_concluido_${usuario.id}`;
+      const jaConcluiu = localStorage.getItem(chaveTour);
+      if (!jaConcluiu) {
+        // Disparo suave para permitir que o DOM e os elementos do Hub estejam renderizados
+        const timer = setTimeout(() => {
+          setTourAberto(true);
+        }, 650);
+        return () => clearTimeout(timer);
+      }
+    } catch {
+      // Ignora erro de acesso a storage
+    }
+  }, [usuario.id, usuario.primeiroAcesso]);
+
+  const handleConcluirTour = () => {
+    try {
+      const chaveTour = `vistorias_sst_hub_tour_concluido_${usuario.id}`;
+      localStorage.setItem(chaveTour, "true");
+    } catch {
+      // Ignora
+    }
+    setTourAberto(false);
+    setMensagemAviso("🎉 Tour interativo concluído! Você pode reabri-lo quando desejar clicando em 'Tour Guiado'.");
+    setTimeout(() => setMensagemAviso(null), 4000);
+  };
+
+  const handleFecharTour = () => {
+    try {
+      const chaveTour = `vistorias_sst_hub_tour_concluido_${usuario.id}`;
+      localStorage.setItem(chaveTour, "true");
+    } catch {
+      // Ignora
+    }
+    setTourAberto(false);
+  };
+
+  const handleReiniciarTour = () => {
+    setTourAberto(true);
+  };
 
   const carregarDados = () => {
     setRascunhos(getRascunhos());
@@ -118,6 +169,34 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
       }
       setMensagemAviso(`Laudo da empresa "${empresa}" excluído com sucesso pelo Administrador.`);
       setTimeout(() => setMensagemAviso(null), 3500);
+    }
+  };
+
+  const handleLiberarParaEdicao = (laudo: LaudoEmitido) => {
+    if (usuario.perfil !== "admin") {
+      alert("Operação restrita a administradores.");
+      return;
+    }
+    if (!laudo.estado) {
+      alert("Erro: Os dados de estado desta inspeção não foram encontrados para recuperação.");
+      return;
+    }
+
+    const confirmMsg = `ATENÇÃO (Perfil Administrativo):\n\nDeseja realmente liberar o laudo #${laudo.numero || ""} da empresa "${laudo.empresa}" para edição?\n\nO laudo assinado será convertido em rascunho em andamento, permitindo que novos apontamentos e alterações sejam feitos.`;
+
+    if (window.confirm(confirmMsg)) {
+      salvarRascunho(laudo.estado);
+      excluirLaudo(laudo.id);
+      carregarDados();
+      if (onLaudoExcluido) {
+        onLaudoExcluido();
+      }
+      if (laudoVisualizando?.id === laudo.id) {
+        setLaudoVisualizando(null);
+      }
+      setMensagemAviso(`✓ Laudo da empresa "${laudo.empresa}" liberado para edição e convertido para rascunho com sucesso.`);
+      setTimeout(() => setMensagemAviso(null), 4000);
+      onContinuarInspecao(laudo.estado);
     }
   };
 
@@ -253,6 +332,17 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
 
             <PWAInstallButton />
 
+            <button
+              type="button"
+              id="btn-hub-tour-guiado"
+              onClick={handleReiniciarTour}
+              className="px-3 py-2 bg-gradient-to-r from-sky-500/20 via-indigo-500/20 to-purple-500/20 hover:from-sky-500/30 hover:to-indigo-500/30 text-sky-300 hover:text-white border border-sky-400/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs group"
+              title="Iniciar Tour Interativo do Hub de Inspeção"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-sky-400 group-hover:rotate-12 transition-transform" />
+              <span className="hidden sm:inline">Tour Guiado</span>
+            </button>
+
             {onAbrirProgramacao && (
               <button
                 type="button"
@@ -346,9 +436,21 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
         {/* Primary Action Hero: Start New Inspection */}
         <div className="mb-8 bg-gradient-to-r from-sky-900/60 via-indigo-900/40 to-slate-900 border border-sky-600/30 rounded-3xl p-6 sm:p-8 shadow-xl shadow-sky-950/20 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-500/20 border border-sky-400/30 rounded-full text-[11px] font-bold text-sky-300">
-              <PlusCircle className="w-3.5 h-3.5 text-sky-400" />
-              <span>Nova Auditoria Técnica</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-500/20 border border-sky-400/30 rounded-full text-[11px] font-bold text-sky-300">
+                <PlusCircle className="w-3.5 h-3.5 text-sky-400" />
+                <span>Nova Auditoria Técnica</span>
+              </div>
+              <button
+                type="button"
+                id="btn-hero-tour-guiado"
+                onClick={handleReiniciarTour}
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 rounded-full text-[11px] font-bold text-indigo-300 hover:text-white transition-colors cursor-pointer"
+                title="Abrir Tour Interativo com passos sobrepostos"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+                <span>Conhecer o Sistema (Tour Guiado)</span>
+              </button>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
               Pronto para iniciar um novo levantamento pericial?
@@ -905,16 +1007,29 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                         )}
                       </div>
 
-                      {/* Disabled Edit Button with Explanatory Warning */}
-                      <button
-                        type="button"
-                        disabled
-                        className="w-full h-7.5 bg-slate-900/50 border border-slate-800 text-slate-400 text-[10px] font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75"
-                        title="Documento jurídico oficial finalizado. Edição bloqueada permanentemente."
-                      >
-                        <Lock className="w-3 h-3 text-slate-400" />
-                        <span>Edição Bloqueada (Documento Assinado)</span>
-                      </button>
+                      {/* Admin Unlock or Disabled Edit Button */}
+                      {usuario.perfil === "admin" ? (
+                        <button
+                          type="button"
+                          id={`btn-liberar-edicao-${laudo.id}`}
+                          onClick={() => handleLiberarParaEdicao(laudo)}
+                          className="w-full h-8 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                          title="Liberar inspeção assinada para edição (Restrito a Administrador)"
+                        >
+                          <Unlock className="w-3.5 h-3.5 text-white" />
+                          <span>🔓 Liberar p/ Edição (ADM)</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          className="w-full h-7.5 bg-slate-900/50 border border-slate-800 text-slate-400 text-[10px] font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75"
+                          title="Documento jurídico oficial finalizado. Edição bloqueada permanentemente."
+                        >
+                          <Lock className="w-3 h-3 text-slate-400" />
+                          <span>Edição Bloqueada (Documento Assinado)</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1093,18 +1208,31 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
 
             {/* Modal Footer */}
             <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between gap-2">
-              <div>
+              <div className="flex items-center gap-2 flex-wrap">
                 {usuario.perfil === "admin" && (
-                  <button
-                    type="button"
-                    id={`btn-modal-excluir-laudo-${laudoVisualizando.id}`}
-                    onClick={() => handleExcluirLaudo(laudoVisualizando.id, laudoVisualizando.empresa, laudoVisualizando.numero)}
-                    className="px-3.5 py-2 bg-rose-950/70 hover:bg-rose-900/90 text-rose-300 border border-rose-800 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                    title="Excluir este laudo permanentemente (Restrito a Administrador)"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                    <span>Excluir Laudo (ADM)</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      id={`btn-modal-liberar-edicao-${laudoVisualizando.id}`}
+                      onClick={() => handleLiberarParaEdicao(laudoVisualizando)}
+                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                      title="Liberar este laudo assinado para edição (Restrito a Administrador)"
+                    >
+                      <Unlock className="w-3.5 h-3.5 text-white" />
+                      <span>Liberar p/ Edição (ADM)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      id={`btn-modal-excluir-laudo-${laudoVisualizando.id}`}
+                      onClick={() => handleExcluirLaudo(laudoVisualizando.id, laudoVisualizando.empresa, laudoVisualizando.numero)}
+                      className="px-3.5 py-2 bg-rose-950/70 hover:bg-rose-900/90 text-rose-300 border border-rose-800 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Excluir este laudo permanentemente (Restrito a Administrador)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Excluir Laudo (ADM)</span>
+                    </button>
+                  </>
                 )}
               </div>
 
@@ -1143,6 +1271,14 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
           </div>
         </div>
       )}
+
+      {/* Componente de Tour Interativo com Passos Sobrepostos */}
+      <InteractiveTour
+        usuario={usuario}
+        isOpen={tourAberto}
+        onClose={handleFecharTour}
+        onComplete={handleConcluirTour}
+      />
     </div>
   );
 };

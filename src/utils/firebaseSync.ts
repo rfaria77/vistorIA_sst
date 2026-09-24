@@ -352,3 +352,62 @@ export async function cancelarSessaoAssinaturaNuvem(sessaoId: string): Promise<v
   }
 }
 
+/**
+ * Limpa dados de teste (laudos, rascunhos, programações) e redefine a coleção de empresas
+ * para conter estritamente as 3 empresas de teste interno (CNPJ, CAEPF e CEI/CNO).
+ *
+ * CRÍTICO: NUNCA TOCA NA COLEÇÃO 'usuarios' — todos os usuários cadastrados pelo usuário
+ * são 100% preservados!
+ */
+export async function limparDadosDeTesteNuvem(empresasPadrao: Empresa[]): Promise<void> {
+  try {
+    // 1. Limpar laudos de teste da nuvem
+    try {
+      const laudosSnap = await getDocs(collection(db, "laudos"));
+      for (const docSnap of laudosSnap.docs) {
+        await deleteDoc(doc(db, "laudos", docSnap.id)).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Erro ao limpar laudos na nuvem:", e);
+    }
+
+    // 2. Limpar rascunhos de teste da nuvem
+    try {
+      const rascSnap = await getDocs(collection(db, "rascunhos"));
+      for (const docSnap of rascSnap.docs) {
+        await deleteDoc(doc(db, "rascunhos", docSnap.id)).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Erro ao limpar rascunhos na nuvem:", e);
+    }
+
+    // 3. Limpar programações de teste da nuvem
+    try {
+      const progSnap = await getDocs(collection(db, "programacoes"));
+      for (const docSnap of progSnap.docs) {
+        await deleteDoc(doc(db, "programacoes", docSnap.id)).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Erro ao limpar programações na nuvem:", e);
+    }
+
+    // 4. Manter apenas as 3 empresas padrão de teste na nuvem
+    try {
+      const empSnap = await getDocs(collection(db, "empresas"));
+      const idsPadrao = new Set(empresasPadrao.map((e) => e.id));
+      for (const docSnap of empSnap.docs) {
+        if (!idsPadrao.has(docSnap.id)) {
+          await deleteDoc(doc(db, "empresas", docSnap.id)).catch(() => {});
+        }
+      }
+      for (const emp of empresasPadrao) {
+        await setDoc(doc(db, "empresas", emp.id), sanitizeData(emp), { merge: true }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn("Erro ao redefinir empresas na nuvem:", e);
+    }
+  } catch (err) {
+    console.error("Erro geral ao limpar dados de teste:", err);
+  }
+}
+

@@ -31,6 +31,70 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// Proxy endpoint para consulta de CNPJ com fallback em múltiplas fontes oficiais
+app.get("/api/cnpj/:cnpj", async (req, res) => {
+  const digits = (req.params.cnpj || "").replace(/\D/g, "");
+  if (digits.length !== 14) {
+    return res.status(400).json({ error: "CNPJ deve conter exatamente 14 dígitos numéricos." });
+  }
+
+  // 1. Tentar BrasilAPI
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const resp = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${digits}`, {
+      signal: controller.signal,
+      headers: { "User-Agent": "VistorIASST/1.0" },
+    });
+    clearTimeout(timeout);
+    if (resp.ok) {
+      const data = await resp.json();
+      return res.json({ success: true, source: "brasilapi", data });
+    }
+  } catch (_e) {
+    // Falhou BrasilAPI, tenta MinhaReceita
+  }
+
+  // 2. Tentar MinhaReceita (dados públicos da Receita Federal)
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const resp = await fetch(`https://minhareceita.org/${digits}`, {
+      signal: controller.signal,
+      headers: { "User-Agent": "VistorIASST/1.0" },
+    });
+    clearTimeout(timeout);
+    if (resp.ok) {
+      const data = await resp.json();
+      return res.json({ success: true, source: "minhareceita", data });
+    }
+  } catch (_e) {
+    // Falhou MinhaReceita, tenta ReceitaWS
+  }
+
+  // 3. Tentar ReceitaWS
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const resp = await fetch(`https://receitaws.com.br/v1/cnpj/${digits}`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.status !== "ERROR") {
+        return res.json({ success: true, source: "receitaws", data });
+      }
+    }
+  } catch (_e) {
+    //
+  }
+
+  return res.status(404).json({
+    error: "Não foi possível localizar os dados deste CNPJ na base pública da Receita Federal.",
+  });
+});
+
 // AI Enquadramento endpoint (Groq como principal, Gemini como secundária/fallback, Heurística como segurança)
 async function callGroqAI(texto: string, nrsLista: string): Promise<any> {
   const apiKey = process.env.GROQ_API_KEY;

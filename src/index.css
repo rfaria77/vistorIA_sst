@@ -1,1 +1,12 @@
 @import "tailwindcss";
+
+@layer utilities {
+  /* Ocultar barra de rolagem mantendo funcionalidade de rolagem nativa */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}

@@ -10,6 +10,7 @@ import {
   ArrowRight,
   LogOut,
   User,
+  FileBadge,
 } from "lucide-react";
 import { UsuarioAuditor } from "../types";
 import { salvarUsuario, salvarUsuarioAutenticado } from "../utils/storage";
@@ -28,6 +29,7 @@ export const PrimeiroAcessoModal: React.FC<PrimeiroAcessoModalProps> = ({
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmaSenha, setConfirmaSenha] = useState("");
+  const [novoRegistro, setNovoRegistro] = useState(usuario.registro || "");
   const [mostrarSenhas, setMostrarSenhas] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState(false);
@@ -61,6 +63,7 @@ export const PrimeiroAcessoModal: React.FC<PrimeiroAcessoModalProps> = ({
     const usuarioAtualizado: UsuarioAuditor = {
       ...usuario,
       senha: novaSenha.trim(),
+      registro: novoRegistro.trim() ? novoRegistro.trim() : usuario.registro,
       primeiroAcesso: false,
     };
 
@@ -186,6 +189,28 @@ export const PrimeiroAcessoModal: React.FC<PrimeiroAcessoModalProps> = ({
                     required
                   />
                 </div>
+              </div>
+
+              {/* Registro Profissional (Opcional) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Nº de Registro Profissional (MTE, CREA ou CRM)</span>
+                  <span className="text-[10px] text-amber-400 font-normal">Opcional</span>
+                </label>
+                <div className="relative">
+                  <FileBadge className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    id="input-primeiro-registro-profissional"
+                    value={novoRegistro}
+                    onChange={(e) => setNovoRegistro(e.target.value)}
+                    placeholder="Ex: CREA 123456/D-SP ou MTE 000123"
+                    className="w-full h-10 pl-9 pr-3 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Atualize seu número oficial para constar nos laudos e relatórios de vistoria.
+                </p>
               </div>
 
               <div className="flex items-center justify-between pt-1">

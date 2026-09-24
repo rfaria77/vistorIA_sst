@@ -18,6 +18,7 @@ import {
   salvarProgramacaoNuvem,
   excluirProgramacaoNuvem,
   criarSessaoAssinaturaNuvem,
+  limparDadosDeTesteNuvem,
 } from "./firebaseSync";
 
 export const STORAGE_KEYS = {
@@ -196,11 +197,12 @@ export function limparUsuarioAutenticado(): void {
   localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
 }
 
-const EMPRESAS_PADRAO: Empresa[] = [
+export const EMPRESAS_PADRAO: Empresa[] = [
   {
     id: "emp-1",
     nome: "Construtora Exemplo Ltda",
     cnpj: "00.000.000/0001-00",
+    tipoInscricao: "CNPJ",
     faixaFuncionarios: "26 a 50",
     contatoWpp: "34999990000",
     endereco: "Av. das Indústrias, 1000 - Distrito Industrial",
@@ -209,25 +211,66 @@ const EMPRESAS_PADRAO: Empresa[] = [
   },
   {
     id: "emp-2",
-    nome: "Metalúrgica & Estruturas Aliança S.A.",
-    cnpj: "12.345.678/0001-99",
-    faixaFuncionarios: "101 a 250",
-    contatoWpp: "11988887777",
-    endereco: "Rua do Progresso, 450 - São Paulo/SP",
-    cnae: "25.11-0",
-    grauRisco: 4,
+    nome: "Fazenda Santa Maria - Produtor Rural",
+    cnpj: "000.000.000/001-99",
+    tipoInscricao: "CAEPF",
+    faixaFuncionarios: "11 a 25",
+    contatoWpp: "34999991111",
+    endereco: "Rodovia Rural MG-452, Km 14 - Zona Rural",
+    cnae: "01.11-3",
+    grauRisco: 3,
   },
   {
     id: "emp-3",
-    nome: "Agroindustrial Grãos do Sul",
-    cnpj: "98.765.432/0001-11",
+    nome: "Obra Residencial Parque das Flores",
+    cnpj: "12.345.67890/55",
+    tipoInscricao: "CEI/CNO",
     faixaFuncionarios: "51 a 100",
-    contatoWpp: "41977776666",
-    endereco: "Rodovia BR 277, Km 120 - Paraná",
-    cnae: "10.41-4",
+    contatoWpp: "34999992222",
+    endereco: "Rua dos Girassóis, 500 - Canteiro de Obras",
+    cnae: "41.20-4",
     grauRisco: 3,
   },
 ];
+
+/**
+ * Limpa todos os dados de teste (laudos, rascunhos, programações) e deixa apenas as 3 empresas
+ * de teste interno (CNPJ, CAEPF e CEI/CNO) cadastradas.
+ *
+ * CRÍTICO: NUNCA REMOVE OS USUÁRIOS! Todos os usuários cadastrados e sessões ativas
+ * são 100% PRESERVADOS.
+ */
+export async function limparDadosDeTeste(): Promise<{
+  empresas: Empresa[];
+  laudos: LaudoEmitido[];
+  rascunhos: RascunhoVistoria[];
+}> {
+  // 1. Limpa laudos locais
+  localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify([]));
+
+  // 2. Limpa rascunhos locais
+  localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify([]));
+
+  // 3. Limpa programações locais
+  localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify([]));
+
+  // 4. Limpa último estado temporário de vistoria em andamento
+  localStorage.removeItem(STORAGE_KEYS.ULTIMO_ESTADO);
+
+  // 5. Restaura as 3 empresas de teste interno
+  localStorage.setItem(STORAGE_KEYS.EMPRESAS, JSON.stringify(EMPRESAS_PADRAO));
+
+  // 6. Sincroniza a limpeza na nuvem (Firestore)
+  await limparDadosDeTesteNuvem(EMPRESAS_PADRAO).catch((err) =>
+    console.warn("Erro ao sincronizar limpeza de teste na nuvem:", err)
+  );
+
+  return {
+    empresas: EMPRESAS_PADRAO,
+    laudos: [],
+    rascunhos: [],
+  };
+}
 
 export function getEmpresas(): Empresa[] {
   try {
@@ -323,9 +366,7 @@ export function getRascunhos(): RascunhoVistoria[] {
       (r: RascunhoVistoria) =>
         r.id !== "rasc-demo-parado-1" &&
         r.id !== "rasc-demo-recente-2" &&
-        !r.id.startsWith("rasc-demo") &&
-        r.empresa !== "Construtora Exemplo Ltda" &&
-        r.empresa !== "Metalúrgica & Estruturas Aliança S.A."
+        !r.id.startsWith("rasc-demo")
     );
     if (limpos.length !== parsed.length) {
       localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(limpos));
@@ -371,15 +412,28 @@ export function salvarRascunho(estado: VistoriaState): RascunhoVistoria {
       r.id !== id &&
       (!estado.empresa || r.empresa.trim().toLowerCase() !== estado.empresa.trim().toLowerCase())
   );
-  const atualizados = [novo, ...outros].slice(0, 30);
-  localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(atualizados));
+  const atualizados = [novo, ...outros].slice(0, 15);
+
+  try {
+    localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(atualizados));
+  } catch (e) {
+    console.warn("Storage quota exceeded, saving only current rascunho...", e);
+    try {
+      localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify([novo]));
+    } catch (e2) {
+      console.error("Critical storage quota exceeded for rascunhos:", e2);
+    }
+  }
+
   salvarRascunhoNuvem(novo).catch((err) => console.warn("Sync nuvem rascunho:", err));
   return novo;
 }
 
 export function deletarRascunho(id: string): void {
   const rascunhos = getRascunhos().filter((r) => r.id !== id);
-  localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(rascunhos));
+  try {
+    localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(rascunhos));
+  } catch {}
   excluirRascunhoNuvem(id).catch((err) => console.warn("Sync nuvem excluir rascunho:", err));
 }
 export const excluirRascunho = deletarRascunho;
@@ -393,12 +447,12 @@ export function getLaudos(): LaudoEmitido[] {
     // Remove laudos de teste caso existam
     const limpos = parsed.filter(
       (l: LaudoEmitido) =>
-        !l.id.startsWith("laudo-demo") &&
-        l.empresa !== "Construtora Exemplo Ltda" &&
-        l.empresa !== "Metalúrgica & Estruturas Aliança S.A."
+        !l.id.startsWith("laudo-demo")
     );
     if (limpos.length !== parsed.length) {
-      localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify(limpos));
+      try {
+        localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify(limpos));
+      } catch {}
     }
     return limpos;
   } catch {
@@ -413,7 +467,17 @@ export function salvarLaudo(laudo: Omit<LaudoEmitido, "id" | "numero">): LaudoEm
     id: `laudo-${Date.now()}`,
     numero: laudos.length + 1,
   };
-  localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify([novo, ...laudos]));
+  const atualizados = [novo, ...laudos].slice(0, 50);
+  try {
+    localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify(atualizados));
+  } catch (e) {
+    console.warn("Storage quota exceeded when saving laudo, saving single laudo...", e);
+    try {
+      localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify([novo]));
+    } catch (e2) {
+      console.error("Critical storage quota exceeded for laudos:", e2);
+    }
+  }
   salvarLaudoNuvem(novo).catch((err) => console.warn("Sync nuvem laudo:", err));
   return novo;
 }

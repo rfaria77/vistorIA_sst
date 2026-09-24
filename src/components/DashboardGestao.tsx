@@ -31,6 +31,7 @@ import {
   ChevronDown,
   RotateCcw,
   CalendarDays,
+  User,
 } from "lucide-react";
 import { LaudoEmitido, RascunhoVistoria, UsuarioAuditor, Apontamento } from "../types";
 import { TITULOS_NR, formatarBRL } from "../data/nr28Data";
@@ -213,6 +214,7 @@ export const DashboardGestao: React.FC<DashboardGestaoProps> = ({
   const [dataFim, setDataFim] = useState<string>("");
   const [filtroOrigem, setFiltroOrigem] = useState<"todos" | "laudos" | "rascunhos">("todos");
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>("todas");
+  const [apenasMinhasVistorias, setApenasMinhasVistorias] = useState<boolean>(false);
   const [modoGraficoBarras, setModoGraficoBarras] = useState<"periodo" | "nr">("periodo");
   const [usarDemoSeVazio, setUsarDemoSeVazio] = useState<boolean>(true);
 
@@ -256,6 +258,13 @@ export const DashboardGestao: React.FC<DashboardGestaoProps> = ({
     // Inclui laudos emitidos
     if (filtroOrigem === "todos" || filtroOrigem === "laudos") {
       laudos.forEach((laudo) => {
+        const inspetorLaudo = (laudo.inspetor || laudo.estado?.inspetor || "").trim().toLowerCase();
+        const nomeUsuario = usuario.nome.trim().toLowerCase();
+
+        if (apenasMinhasVistorias && inspetorLaudo && inspetorLaudo !== "" && !inspetorLaudo.includes(nomeUsuario) && !nomeUsuario.includes(inspetorLaudo)) {
+          return;
+        }
+
         const dataDoc = parseData(laudo.data) || new Date();
         const evs = laudo.estado?.evidencias || [];
         evs.forEach((ev) => {
@@ -275,6 +284,13 @@ export const DashboardGestao: React.FC<DashboardGestaoProps> = ({
     // Inclui rascunhos em andamento
     if (filtroOrigem === "todos" || filtroOrigem === "rascunhos") {
       rascunhos.forEach((rasc) => {
+        const inspetorRasc = (rasc.estado?.inspetor || rasc.estado?.auditorNome || "").trim().toLowerCase();
+        const nomeUsuario = usuario.nome.trim().toLowerCase();
+
+        if (apenasMinhasVistorias && inspetorRasc && inspetorRasc !== "" && !inspetorRasc.includes(nomeUsuario) && !nomeUsuario.includes(inspetorRasc)) {
+          return;
+        }
+
         const dataDoc = parseData(rasc.dataAtualizacao) || parseData(rasc.estado?.data) || new Date();
         const evs = rasc.estado?.evidencias || [];
         evs.forEach((ev) => {
@@ -358,6 +374,8 @@ export const DashboardGestao: React.FC<DashboardGestaoProps> = ({
     dataInicio,
     dataFim,
     usarDemoSeVazio,
+    apenasMinhasVistorias,
+    usuario.nome,
   ]);
 
   // Agrupamento por NR (Gráfico de Pizza e Estatísticas)
@@ -679,20 +697,53 @@ export const DashboardGestao: React.FC<DashboardGestaoProps> = ({
               </select>
             </div>
 
-            {/* Indicador de Resumo do Recorte */}
-            <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 flex items-center justify-between">
-              <div className="text-xs">
-                <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                  Amostra Selecionada
+            {/* Filtro de Produtividade Individual */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 text-sky-400" />
+                <span>Produtividade Individual</span>
+              </label>
+              <button
+                type="button"
+                id="btn-filtro-minhas-vistorias"
+                onClick={() => setApenasMinhasVistorias(!apenasMinhasVistorias)}
+                className={`w-full border rounded-xl px-3 py-2 text-xs font-semibold flex items-center justify-between transition cursor-pointer ${
+                  apenasMinhasVistorias
+                    ? "bg-sky-600/20 border-sky-500 text-sky-200 shadow-sm shadow-sky-950"
+                    : "bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                }`}
+                title="Alternar entre ver estatísticas globais da equipe ou apenas suas próprias vistorias"
+              >
+                <span className="truncate">
+                  {apenasMinhasVistorias ? "✓ Apenas Minhas Vistorias" : "Todas (Visão da Equipe)"}
+                </span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-bold ${apenasMinhasVistorias ? "bg-sky-500 text-white" : "bg-slate-800 text-slate-400"}`}>
+                  {apenasMinhasVistorias ? "Individual" : "Geral"}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Indicador de Resumo do Recorte */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-xs">
+                📊
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
+                  Amostra Selecionada no Recorte Atual {apenasMinhasVistorias ? `(Individual: ${usuario.nome})` : "(Equipe Completa)"}
                 </span>
                 <span className="text-white font-bold text-sm">
-                  {apontamentosFiltrados.length} irregularidade(s)
+                  {apontamentosFiltrados.length} irregularidade(s) em {totalVistoriasAnalisadas} auditoria(s)
                 </span>
               </div>
-              <div className="text-right text-[10px] text-slate-400">
-                <span>{totalVistoriasAnalisadas} auditoria(s)</span>
-              </div>
             </div>
+            {apenasMinhasVistorias && (
+              <span className="text-[11px] font-medium bg-sky-950 text-sky-300 border border-sky-800 px-3 py-1 rounded-lg">
+                Filtro individual ativo
+              </span>
+            )}
           </div>
 
           {/* Seletores de Data Personalizada caso selecionado */}

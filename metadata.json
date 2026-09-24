@@ -1,6 +1,6 @@
 {
-  "name": "VistorIA SST - Auditoria & Gestão NR 28",
-  "description": "Sistema móvel de auditoria pericial em Segurança do Trabalho com enquadramento por IA, cálculo de multas NR 28, carimbo forense e laudo PDF assinado.",
-  "requestFramePermissions": ["camera", "geolocation"],
+  "name": "VistorIA SST — Laudos de Vistoria e Perícia SST",
+  "description": "Plataforma Profissional para Auditorias, Vistorias e Laudos Técnicos de Segurança e Saúde no Trabalho com IA e Geração de PDF/WhatsApp.",
+  "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -54,11 +54,11 @@ export const ClosureStep: React.FC<ClosureStepProps> = ({
   const totalNaoConformidades = state.evidencias.filter((e) => e.status === "Não Conformidade").length;
   const passivoMax = state.evidencias
     .filter((e) => e.status === "Não Conformidade")
-    .reduce((acc, curr) => acc + curr.valorMax, 0);
+    .reduce((acc, curr) => acc + (curr.valorMax || 0), 0);
 
   const economiaMax = state.evidencias
     .filter((e) => e.status === "Conformidade")
-    .reduce((acc, curr) => acc + curr.valorMax, 0);
+    .reduce((acc, curr) => acc + (curr.valorMax || 0), 0);
 
   const [emailDestino, setEmailDestino] = useState("");
   const [copiado, setCopiado] = useState(false);
@@ -139,10 +139,10 @@ export const ClosureStep: React.FC<ClosureStepProps> = ({
         data: state.data || new Date().toLocaleDateString("pt-BR"),
         empresa: state.empresa,
         cnpj: state.cnpj,
-        inspetor: state.inspetor,
-        regInspetor: state.regInspetor,
-        acompNome: state.acompNome,
-        acompCargo: state.acompCargo,
+        inspetor: state.inspetor || "",
+        regInspetor: state.regInspetor || "",
+        acompNome: state.acompNome || "",
+        acompCargo: state.acompCargo || "",
         totalItens: state.evidencias.length,
         totalNaoConformidades,
         passivoRiscoMax: passivoMax,
@@ -415,7 +415,7 @@ export const ClosureStep: React.FC<ClosureStepProps> = ({
             id="signature-auditor"
             label={`1. Assinatura do Auditor SST — ${state.inspetor || "Auditor"}`}
             sublabel={`Registro: ${state.regInspetor || "MTE / CREA"}`}
-            initialDataUrl={state.assinaturaInspetor}
+            initialDataUrl={state.assinaturaInspetor || undefined}
             onSave={(dataUrl) => onChange("assinaturaInspetor", dataUrl)}
           />
 
@@ -461,7 +461,7 @@ export const ClosureStep: React.FC<ClosureStepProps> = ({
               id="signature-acompanhante"
               label={`2. Assinatura do Acompanhante da Empresa — ${state.acompNome || "Preposto"}`}
               sublabel={`Cargo: ${state.acompCargo || "Encarregado Geral"}`}
-              initialDataUrl={state.assinaturaAcompanhante}
+              initialDataUrl={state.assinaturaAcompanhante || undefined}
               onSave={(dataUrl) => onChange("assinaturaAcompanhante", dataUrl)}
             />
           </div>
