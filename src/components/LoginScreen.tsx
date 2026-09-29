@@ -16,6 +16,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { UsuarioAuditor } from "../types";
+import { ConnectionHealthMonitor } from "./ConnectionHealthMonitor";
 import { getUsuarios, salvarUsuario } from "../utils/storage";
 import { subscribeUsuariosNuvem } from "../utils/firebaseSync";
 import {
@@ -169,7 +170,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-8 selection:bg-sky-500 selection:text-white">
+    <>
+      <ConnectionHealthMonitor />
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-8 selection:bg-sky-500 selection:text-white">
       {/* Background Subtle Gradient Glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -left-40 w-96 h-96 bg-sky-600/10 rounded-full blur-3xl" />
@@ -482,6 +485,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         </p>
       </div>
     </div>
+    </>
   );
 };
 

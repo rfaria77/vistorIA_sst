@@ -894,7 +894,7 @@ export const FindingsStep: React.FC<FindingsStepProps> = ({
                             {isNC ? `NÃO CONFORMIDADE (${ev.prioridade})` : "BOA PRÁTICA"}
                           </span>
                           <span className="text-xs font-bold text-slate-900">
-                            #{index + 1} {ev.nr} (Item {ev.itemNr})
+                            #{index + 1} {isNC ? `${ev.nr} (Item {ev.itemNr})` : "Boa Prática Evidenciada"}
                           </span>
                         </div>
 

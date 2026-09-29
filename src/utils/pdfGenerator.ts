@@ -521,8 +521,11 @@ export async function gerarLaudoPericialPDF(options: PDFGenerationOptions): Prom
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8.5);
     doc.setTextColor(15, 23, 42);
+    const tituloItemPdf = isNC
+      ? `Item #${i + 1}: ${ev.nr} (Item ${ev.itemNr}) — Grau ${ev.infracao} (${(ev.tipo || ev.tipoNorma) === "M" ? "Medicina" : "Segurança"})`
+      : `Item #${i + 1}: Boa Prática Evidenciada (Conformidade Verificada)`;
     doc.text(
-      `Item #${i + 1}: ${ev.nr} (Item ${ev.itemNr}) — Grau ${ev.infracao} (${ev.tipo === "M" ? "Medicina" : "Segurança"})`,
+      tituloItemPdf,
       margin + 53,
       currentY + 7.2
     );

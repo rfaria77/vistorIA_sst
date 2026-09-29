@@ -244,3 +244,14 @@ export interface ItemNR28 {
   tipo: TipoNorma;
   categoria?: string;
 }
+
+export interface AuditLog {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  action: string;
+  details: string;
+  ipOrUserAgent?: string;
+}

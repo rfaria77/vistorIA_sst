@@ -9,6 +9,10 @@ import { InspectionHub } from "./components/InspectionHub";
 import { DashboardGestao } from "./components/DashboardGestao";
 import { GestaoProgramacaoRelatorios } from "./components/GestaoProgramacaoRelatorios";
 import { PortalAssinaturaAcompanhante } from "./components/PortalAssinaturaAcompanhante";
+import { ModuloInvestigacaoAcidente } from "./components/ModuloInvestigacaoAcidente";
+import { GestaoAtividades } from "./components/GestaoAtividades";
+import { ModuloChecklistEquipamentos } from "./components/ModuloChecklistEquipamentos";
+import { ModuloSelector } from "./components/ModuloSelector";
 import { PrimeiroAcessoModal } from "./components/PrimeiroAcessoModal";
 import { OfflineIndicator } from "./components/OfflineIndicator";
 import {
@@ -33,6 +37,7 @@ import {
   limparUsuarioAutenticado,
   removerLogoConsultoria,
   salvarEmpresa,
+  excluirEmpresa,
   salvarLogoConsultoria,
   salvarRascunho,
   salvarUsuario,
@@ -41,6 +46,7 @@ import {
   excluirLaudo,
   deletarRascunho,
   limparDadosDeTeste,
+  calcularStatusPrazo,
   STORAGE_KEYS,
 } from "./utils/storage";
 import {
@@ -49,8 +55,11 @@ import {
   subscribeRascunhosNuvem,
   subscribeLaudosNuvem,
   subscribeProgramacoesNuvem,
+  subscribeSessaoAssinaturaNuvem,
   testConnection,
 } from "./utils/firebaseSync";
+import { dispararNotificacaoLocal } from "./utils/pushNotifications";
+import { getBackupConfig, executarBackupManualOuAutomatico } from "./utils/automaticBackup";
 
 const INITIAL_STATE: VistoriaState = {
   empresa: "",
@@ -72,8 +81,8 @@ export function App() {
   const [usuario, setUsuario] = useState<UsuarioAuditor | null>(null);
   const [usuarios, setUsuarios] = useState<UsuarioAuditor[]>([]);
   const [modoVisualizacao, setModoVisualizacao] = useState<
-    "login" | "hub" | "inspecao" | "dashboard" | "programacao"
-  >("hub");
+    "login" | "selecao_modulo" | "hub" | "inspecao" | "dashboard" | "programacao" | "investigacao_acidente" | "atividades" | "checklist_equipamentos"
+  >("login");
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [state, setState] = useState<VistoriaState>(INITIAL_STATE);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
@@ -124,7 +133,7 @@ export function App() {
     const auth = getUsuarioAutenticado();
     if (auth) {
       setUsuario(auth);
-      setModoVisualizacao("hub");
+      setModoVisualizacao("selecao_modulo");
       setState((prev) => ({
         ...prev,
         inspetor: auth.nome,
@@ -173,12 +182,51 @@ export function App() {
       localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify(cloudLaudos));
     });
 
+    let initialProgsLoaded = false;
     const unsubProgramacoes = subscribeProgramacoesNuvem((cloudProgs) => {
       if (cloudProgs && cloudProgs.length > 0) {
+        if (initialProgsLoaded) {
+          for (const prog of cloudProgs) {
+            if (!programacoes.some((p) => p.id === prog.id) && !prog.statusConcluido) {
+              dispararNotificacaoLocal(
+                "Nova Programação de Vistoria 📅",
+                `Empresa: ${prog.empresaNome} | Tipo: ${prog.tipoRelatorio}`
+              );
+            }
+          }
+        }
+        initialProgsLoaded = true;
         setProgramacoes(cloudProgs);
         localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify(cloudProgs));
       }
     });
+
+    let unsubAssinatura: (() => void) | undefined;
+    if (sessaoAssinaturaId) {
+      unsubAssinatura = subscribeSessaoAssinaturaNuvem(sessaoAssinaturaId, (sessao) => {
+        if (sessao && sessao.status === "assinado") {
+          dispararNotificacaoLocal(
+            "Assinatura Remota Concluída! ✍️",
+            `O acompanhante ${sessao.acompNome || 'da empresa'} assinou o documento remotamente.`
+          );
+        }
+      });
+    }
+
+    // Configuração de Backup Automático periódico baseado no intervalo definido pelo Administrador
+    const backupIntervalTimer = setInterval(async () => {
+      try {
+        const config = getBackupConfig();
+        if (config.ativo && config.intervaloMinutos > 0) {
+          const resultado = await executarBackupManualOuAutomatico("automatico");
+          if (resultado.sucesso) {
+            console.log(`[Backup Automático] Sincronizado com sucesso às ${resultado.dataHora} (${resultado.totalItens} itens).`);
+          }
+        }
+      } catch (err) {
+        console.warn("[Backup Automático] Erro no ciclo periódico:", err);
+      }
+    }, 60 * 1000); // Checa a cada 1 minuto se o intervalo foi atingido
 
     return () => {
       unsubUsuarios();
@@ -186,6 +234,8 @@ export function App() {
       unsubRascunhos();
       unsubLaudos();
       unsubProgramacoes();
+      if (unsubAssinatura) unsubAssinatura();
+      clearInterval(backupIntervalTimer);
     };
   }, []);
 
@@ -205,7 +255,7 @@ export function App() {
       inspetor: usr.nome,
       regInspetor: usr.registro,
     }));
-    setModoVisualizacao("hub");
+    setModoVisualizacao("selecao_modulo");
     showToast(`Bem-vindo(a), ${usr.nome} (${usr.perfil === "admin" ? "Administrador" : "Inspetor"})!`);
   };
 
@@ -279,13 +329,29 @@ export function App() {
   };
 
   const handleStateChange = (field: keyof VistoriaState, value: any) => {
-    setState((prev) => ({ ...prev, [field]: value }));
+    setState((prev) => {
+      const atualizado = { ...prev, [field]: value };
+      try {
+        const salvo = salvarRascunho(atualizado);
+        atualizado.rascunhoId = salvo.id;
+        setRascunhos(getRascunhos());
+      } catch (err) {
+        console.error("Erro no auto-save em tempo real:", err);
+      }
+      return atualizado;
+    });
   };
 
-  const handleCadastrarEmpresa = (novaEmpresa: Omit<Empresa, "id">) => {
+  const handleCadastrarEmpresa = (novaEmpresa: Omit<Empresa, "id"> & { id?: string }) => {
     salvarEmpresa(novaEmpresa);
     setEmpresas(getEmpresas());
-    showToast(`Empresa "${novaEmpresa.nome}" cadastrada com sucesso!`);
+    showToast(`Empresa "${novaEmpresa.nome}" salva com sucesso!`);
+  };
+
+  const handleExcluirEmpresa = (id: string) => {
+    excluirEmpresa(id);
+    setEmpresas(getEmpresas());
+    showToast("Empresa excluída com sucesso.");
   };
 
   const handleSalvarRascunho = () => {
@@ -458,6 +524,62 @@ export function App() {
     return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
   }
 
+  // 1B. TELA DE SELEÇÃO DE MÓDULO PÓS-LOGIN
+  if (modoVisualizacao === "selecao_modulo" && usuario) {
+    const totalAtrasadas = programacoes.filter((p) => {
+      const status = calcularStatusPrazo(p.dataProximaProgramada, p.periodicidade);
+      return status.status === "atrasado";
+    }).length;
+
+    return (
+      <>
+        <ModuloSelector
+          usuario={usuario}
+          onSelecionarModulo={(mod) => {
+            if (mod === "inspecao") setModoVisualizacao("hub");
+            else if (mod === "investigacao") setModoVisualizacao("investigacao_acidente");
+            else if (mod === "dashboard") setModoVisualizacao("dashboard");
+            else if (mod === "programacao") setModoVisualizacao("programacao");
+            else if (mod === "atividades") setModoVisualizacao("atividades");
+            else if (mod === "checklist_equipamentos") setModoVisualizacao("checklist_equipamentos");
+            else if (mod === "admin") setAdminOpen(true);
+          }}
+          onLogout={handleLogout}
+          totalRascunhos={rascunhos.length}
+          totalLaudos={laudos.length}
+          totalProgramacoesAtrasadas={totalAtrasadas}
+        />
+
+        {/* Modal de Gestão ADM acessível a partir da seleção de módulos */}
+        <AdminModal
+          isOpen={adminOpen}
+          onClose={() => setAdminOpen(false)}
+          empresas={empresas}
+          onSalvarEmpresa={handleCadastrarEmpresa}
+          logoConsultoria={logoConsultoria}
+          onSalvarLogo={handleSalvarLogo}
+          onRemoverLogo={handleRemoverLogo}
+          laudos={laudos}
+          onExcluirLaudo={usuario.perfil === "admin" ? handleExcluirLaudo : undefined}
+          usuarios={usuarios}
+          onSalvarUsuario={handleSalvarUsuario}
+          onExcluirUsuario={handleExcluirUsuario}
+          usuarioLogado={usuario}
+          rascunhos={rascunhos}
+          programacoes={programacoes}
+        />
+
+        {toastMessage && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg border border-slate-800 transition-all">
+            {toastMessage}
+          </div>
+        )}
+
+        <OfflineIndicator />
+      </>
+    );
+  }
+
   // 2. TELA DE HUB / SELEÇÃO (NOVA INSPEÇÃO OU CONTINUAR/EDITAR EXISTENTE)
   if (modoVisualizacao === "hub") {
     return (
@@ -467,9 +589,11 @@ export function App() {
           onIniciarNovaInspecao={handleIniciarNovaInspecao}
           onContinuarInspecao={handleContinuarInspecao}
           onLogout={handleLogout}
+          onVoltarPaginaInicial={() => setModoVisualizacao("selecao_modulo")}
           onAbrirAdmin={usuario.perfil === "admin" ? handleAbrirAdmin : undefined}
           onAbrirDashboard={() => setModoVisualizacao("dashboard")}
           onAbrirProgramacao={() => setModoVisualizacao("programacao")}
+          onAbrirInvestigacaoAcidente={() => setModoVisualizacao("investigacao_acidente")}
           onLaudoExcluido={() => setLaudos(getLaudos())}
         />
 
@@ -528,6 +652,66 @@ export function App() {
           onIniciarVistoriaParaEmpresa={handleIniciarVistoriaParaEmpresa}
           onVoltar={() => setModoVisualizacao("hub")}
           onAbrirDashboard={() => setModoVisualizacao("dashboard")}
+        />
+
+        {toastMessage && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg border border-slate-800 transition-all">
+            {toastMessage}
+          </div>
+        )}
+
+        <OfflineIndicator />
+      </>
+    );
+  }
+
+  // 4C. TELA DE GESTÃO DE ATIVIDADES E RELATÓRIO TÉCNICO PARA GESTORES
+  if (modoVisualizacao === "atividades" && usuario) {
+    return (
+      <>
+        <GestaoAtividades
+          usuario={usuario}
+          empresas={empresas}
+          usuarios={usuarios}
+          onBack={() => setModoVisualizacao("selecao_modulo")}
+        />
+
+        {toastMessage && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg border border-slate-800 transition-all">
+            {toastMessage}
+          </div>
+        )}
+
+        <OfflineIndicator />
+      </>
+    );
+  }
+  if (modoVisualizacao === "checklist_equipamentos" && usuario) {
+    return (
+      <>
+        <ModuloChecklistEquipamentos
+          usuario={usuario}
+          onVoltar={() => setModoVisualizacao("selecao_modulo")}
+          empresas={empresas}
+        />
+
+        {toastMessage && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg border border-slate-800 transition-all">
+            {toastMessage}
+          </div>
+        )}
+
+        <OfflineIndicator />
+      </>
+    );
+  }
+
+  if (modoVisualizacao === "investigacao_acidente" && usuario) {
+    return (
+      <>
+        <ModuloInvestigacaoAcidente
+          usuarioLogado={usuario}
+          onVoltar={() => setModoVisualizacao("hub")}
         />
 
         {toastMessage && (
@@ -624,6 +808,7 @@ export function App() {
         onClose={() => setAdminOpen(false)}
         empresas={empresas}
         onSalvarEmpresa={handleCadastrarEmpresa}
+        onExcluirEmpresa={handleExcluirEmpresa}
         logoConsultoria={logoConsultoria}
         onSalvarLogo={handleSalvarLogo}
         onRemoverLogo={handleRemoverLogo}

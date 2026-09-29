@@ -40,6 +40,7 @@ import {
 } from "../utils/storage";
 import { gerarLaudoPericialPDF } from "../utils/pdfGenerator";
 import { formatarBRL } from "../data/nr28Data";
+import { CalendarioMensalProgramacao } from "./CalendarioMensalProgramacao";
 
 interface GestaoProgramacaoRelatoriosProps {
   usuario: UsuarioAuditor;
@@ -54,7 +55,7 @@ interface GestaoProgramacaoRelatoriosProps {
   onAbrirDashboard?: () => void;
 }
 
-const PERIODICIDADES_INFO: Record<
+export const PERIODICIDADES_INFO: Record<
   PeriodicidadeRelatorio,
   { label: string; sigla: string; cor: string; dias: number; desc: string }
 > = {
@@ -131,7 +132,7 @@ export const GestaoProgramacaoRelatorios: React.FC<GestaoProgramacaoRelatoriosPr
   const [filtroEmpresa, setFiltroEmpresa] = useState<string>("todas");
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "atrasado" | "atencao" | "em_dia" | "eventual">("todos");
   const [filtroPeriodicidade, setFiltroPeriodicidade] = useState<string>("todas");
-  const [modoVisualizacao, setModoVisualizacao] = useState<"empresa" | "cronograma">("empresa");
+  const [modoVisualizacao, setModoVisualizacao] = useState<"empresa" | "cronograma" | "calendario">("empresa");
 
   // Modais
   const [modalNovaAberto, setModalNovaAberto] = useState(false);
@@ -697,7 +698,20 @@ export const GestaoProgramacaoRelatorios: React.FC<GestaoProgramacaoRelatoriosPr
                 }`}
               >
                 <Timer className="w-3.5 h-3.5" />
-                <span>Cronograma Cronológico</span>
+                <span>Cronograma</span>
+              </button>
+              <button
+                type="button"
+                id="btn-modo-calendario"
+                onClick={() => setModoVisualizacao("calendario")}
+                className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  modoVisualizacao === "calendario"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                <span>Calendário Mensal</span>
               </button>
             </div>
           </div>
@@ -1234,6 +1248,14 @@ export const GestaoProgramacaoRelatorios: React.FC<GestaoProgramacaoRelatoriosPr
               </table>
             </div>
           </div>
+        )}
+        {/* VISÃO 3: CALENDÁRIO MENSAL GRÁFICO */}
+        {modoVisualizacao === "calendario" && (
+          <CalendarioMensalProgramacao
+            programacoes={programacoesProcessadas}
+            onEditar={(prog) => handleAbrirEdicao(prog)}
+            onIniciarVistoria={(empresaNome, tipo) => onIniciarVistoriaParaEmpresa(empresaNome, tipo)}
+          />
         )}
       </main>
 

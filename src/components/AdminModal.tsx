@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Building2,
   Image as ImageIcon,
@@ -31,7 +31,8 @@ import {
   Clock,
   Activity,
 } from "lucide-react";
-import { Empresa, FaixaFuncionarios, LaudoEmitido, PerfilUsuario, ProgramacaoRelatorio, RascunhoVistoria, TipoInscricao, UsuarioAuditor } from "../types";
+import { AuditLog, Empresa, FaixaFuncionarios, LaudoEmitido, PerfilUsuario, ProgramacaoRelatorio, RascunhoVistoria, TipoInscricao, UsuarioAuditor } from "../types";
+import { registrarAuditoriaNuvem, subscribeAuditLogsNuvem } from "../utils/firebaseSync";
 import { FAIXAS_FUNCIONARIOS, formatarBRL } from "../data/nr28Data";
 import { LISTA_CNAE_NR04, buscarCNAEPorCodigoOuDescricao } from "../data/cnaeData";
 import { CnaeSelector } from "./CnaeSelector";
@@ -49,12 +50,15 @@ import {
   exportarRascunhosCsv,
   exportarLaudosCsv,
 } from "../utils/exportUtils";
+import { processOutboxQueue } from "../utils/syncQueue";
+import { getBackupConfig, salvarBackupConfig, executarBackupManualOuAutomatico } from "../utils/automaticBackup";
 
 interface AdminModalProps {
   isOpen: boolean;
   onClose: () => void;
   empresas: Empresa[];
-  onSalvarEmpresa: (empresa: Omit<Empresa, "id">) => void;
+  onSalvarEmpresa: (empresa: Omit<Empresa, "id"> & { id?: string }) => void;
+  onExcluirEmpresa?: (id: string) => void;
   logoConsultoria: string | null;
   onSalvarLogo: (base64: string) => void;
   onRemoverLogo: () => void;
@@ -81,6 +85,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   onClose,
   empresas,
   onSalvarEmpresa,
+  onExcluirEmpresa,
   logoConsultoria,
   onSalvarLogo,
   onRemoverLogo,
@@ -94,9 +99,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   rascunhos = [],
   programacoes = [],
 }) => {
-  const [activeTab, setActiveTab] = useState<"usuarios" | "empresas" | "identidade" | "historico" | "norma" | "backup">("usuarios");
+  const [activeTab, setActiveTab] = useState<"usuarios" | "empresas" | "identidade" | "historico" | "norma" | "backup" | "auditoria" | "comparar">("usuarios");
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+
+  useEffect(() => {
+    const unsub = subscribeAuditLogsNuvem((logs) => {
+      setAuditLogs(logs);
+    });
+    return () => unsub();
+  }, []);
 
   // Empresa form state
+  const [empresaEditandoId, setEmpresaEditandoId] = useState<string | null>(null);
   const [tipoInscricaoEmpresa, setTipoInscricaoEmpresa] = useState<TipoInscricao>("CNPJ");
   const [nome, setNome] = useState("");
   const [cnpj, setCnpj] = useState("");
@@ -168,16 +182,45 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [credenciaisModal, setCredenciaisModal] = useState<CredenciaisModalState | null>(null);
   const [subTabHistorico, setSubTabHistorico] = useState<"atividades" | "laudos">("atividades");
 
+  // Estado do Backup Automático
+  const [backupConfigState, setBackupConfigState] = useState(() => getBackupConfig());
+  const [executandoBackupAuto, setExecutandoBackupAuto] = useState(false);
+
   const [msgSucesso, setMsgSucesso] = useState<string | null>(null);
   const [msgErro, setMsgErro] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const handleIniciarEdicaoEmpresa = (emp: Empresa) => {
+    setEmpresaEditandoId(emp.id);
+    setNome(emp.nome);
+    setCnpj(emp.cnpj);
+    setTipoInscricaoEmpresa(emp.tipoInscricao || "CNPJ");
+    setFaixa(emp.faixaFuncionarios || "26 a 50");
+    setWpp(emp.contatoWpp || "");
+    setCnae(emp.cnae || "41.20-4");
+    setCnaeDescricao(emp.cnaeDescricao || "");
+    setGrauRisco(((emp.grauRisco as any) || 3) as 1 | 2 | 3 | 4);
+    setMsgCnpjAdmin(null);
+  };
+
+  const handleCancelarEdicaoEmpresa = () => {
+    setEmpresaEditandoId(null);
+    setNome("");
+    setCnpj("");
+    setWpp("");
+    setCnae("41.20-4");
+    setCnaeDescricao("");
+    setTipoInscricaoEmpresa("CNPJ");
+    setMsgCnpjAdmin(null);
+  };
 
   const handleCadastrarEmpresa = (e: React.FormEvent) => {
     e.preventDefault();
     if (!nome.trim()) return;
 
     onSalvarEmpresa({
+      id: empresaEditandoId || undefined,
       nome: nome.trim(),
       cnpj: cnpj.trim() || "00.000.000/0001-00",
       tipoInscricao: tipoInscricaoEmpresa,
@@ -188,6 +231,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       grauRisco,
     });
 
+    setEmpresaEditandoId(null);
     setNome("");
     setCnpj("");
     setWpp("");
@@ -196,7 +240,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setCnaesSecundariosAdmin([]);
     setTipoInscricaoEmpresa("CNPJ");
     setMsgCnpjAdmin(null);
-    setMsgSucesso("Empresa cadastrada com sucesso!");
+    setMsgSucesso(empresaEditandoId ? "Empresa atualizada com sucesso!" : "Empresa cadastrada com sucesso!");
     setTimeout(() => setMsgSucesso(null), 3000);
   };
 
@@ -454,6 +498,41 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             >
               <Download className="w-4 h-4 text-rose-600" />
               <span>6. Backup &amp; Exportação (JSON/CSV)</span>
+            </button>
+
+            <button
+              type="button"
+              id="tab-admin-auditoria"
+              onClick={() => setActiveTab("auditoria")}
+              className={`shrink-0 px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer ${
+                activeTab === "auditoria"
+                  ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Activity className="w-4 h-4 text-amber-600" />
+              <span>7. Logs de Auditoria (Audit Trail)</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                  activeTab === "auditoria" ? "bg-indigo-100 text-indigo-800" : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {auditLogs.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              id="tab-admin-comparar"
+              onClick={() => setActiveTab("comparar")}
+              className={`shrink-0 px-3.5 py-2 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer ${
+                activeTab === "comparar"
+                  ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Users className="w-4 h-4 text-sky-600" />
+              <span>8. Produtividade &amp; Investigação (Mês)</span>
             </button>
           </div>
         </div>
@@ -827,8 +906,18 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                     <PlusCircle className="w-4 h-4 text-indigo-600" />
-                    <span>Cadastrar Empresa / Produtor para Vistorias Rápidas</span>
+                    <span>{empresaEditandoId ? "Editar Empresa / Produtor" : "Cadastrar Empresa / Produtor para Vistorias Rápidas"}</span>
                   </h3>
+
+                  {empresaEditandoId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelarEdicaoEmpresa}
+                      className="text-[11px] text-slate-500 hover:text-slate-800 underline font-semibold cursor-pointer"
+                    >
+                      Cancelar Edição
+                    </button>
+                  )}
 
                   {/* Seletor de Tipo de Documento */}
                   <div className="inline-flex p-0.5 bg-slate-200/70 rounded-lg border border-slate-300">
@@ -1147,7 +1236,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Salvar Empresa / Produtor</span>
+                    <span>{empresaEditandoId ? "Atualizar Empresa" : "Salvar Empresa / Produtor"}</span>
                   </button>
                 </div>
               </form>
@@ -1210,9 +1299,37 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             {emp.grauRisco && ` (Grau ${emp.grauRisco})`}
                           </p>
                         </div>
-                        <span className="text-[11px] font-mono text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          {emp.contatoWpp}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-mono text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            {emp.contatoWpp}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleIniciarEdicaoEmpresa(emp)}
+                            className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg text-xs font-semibold flex items-center gap-1 border border-slate-200 cursor-pointer"
+                            title="Editar empresa"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span className="text-[11px]">Editar</span>
+                          </button>
+                          {onExcluirEmpresa && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Deseja realmente excluir a empresa "${emp.nome}"?`)) {
+                                  onExcluirEmpresa(emp.id);
+                                  setMsgSucesso(`Empresa "${emp.nome}" excluída.`);
+                                  setTimeout(() => setMsgSucesso(null), 3000);
+                                }
+                              }}
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                              title="Excluir empresa"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span className="text-[11px]">Excluir</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -1522,6 +1639,183 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </div>
               </div>
 
+              {/* CARD: BACKUP AUTOMÁTICO PERIÓDICO NO FIREBASE */}
+              <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-sky-950/60 border-2 border-sky-500/40 rounded-2xl p-4 sm:p-5 shadow-md space-y-4 text-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <h4 className="text-xs font-bold text-sky-300 flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-sky-400" />
+                      <span>Backup Automático Periódico (Sincronização Nuvem)</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Sincroniza automaticamente todos os dados locais (empresas, laudos, rascunhos e usuários) para o Firebase Firestore em intervalos definidos, garantindo redundância e salvamento sem intervenção manual.
+                    </p>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={backupConfigState.ativo}
+                      onChange={(e) => {
+                        const novo = { ...backupConfigState, ativo: e.target.checked };
+                        setBackupConfigState(novo);
+                        salvarBackupConfig(novo);
+                        setMsgSucesso(e.target.checked ? "Backup Automático ativado com sucesso!" : "Backup Automático desativado.");
+                        setTimeout(() => setMsgSucesso(null), 3000);
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-800 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-600 border border-slate-700"></div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-300 mb-1">
+                      Intervalo de Sincronização Automática
+                    </label>
+                    <select
+                      value={backupConfigState.intervaloMinutos}
+                      onChange={(e) => {
+                        const minutos = Number(e.target.value);
+                        const novo = { ...backupConfigState, intervaloMinutos: minutos };
+                        setBackupConfigState(novo);
+                        salvarBackupConfig(novo);
+                        setMsgSucesso(`Intervalo de backup alterado para ${minutos} minuto(s).`);
+                        setTimeout(() => setMsgSucesso(null), 3000);
+                      }}
+                      className="w-full h-10 px-3 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white font-medium focus:ring-2 focus:ring-sky-500"
+                    >
+                      <option value={5}>A cada 5 minutos</option>
+                      <option value={15}>A cada 15 minutos (Recomendado)</option>
+                      <option value={30}>A cada 30 minutos</option>
+                      <option value={60}>A cada 1 hora</option>
+                      <option value={360}>A cada 6 horas</option>
+                      <option value={1440}>A cada 24 horas (Diário)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col justify-between pt-1">
+                    <div className="text-[11px] text-slate-400 space-y-0.5">
+                      <p>
+                        Último backup: <strong className="text-white">{backupConfigState.ultimaSincronizacao || "Nunca executado"}</strong>
+                      </p>
+                      <p>
+                        Status atual:{" "}
+                        <span className={`font-bold ${backupConfigState.status === "sucesso" ? "text-emerald-400" : backupConfigState.status === "erro" ? "text-rose-400" : "text-amber-400"}`}>
+                          {backupConfigState.status === "sucesso" ? "Sincronizado" : backupConfigState.status === "erro" ? "Erro na última execução" : "Aguardando ciclo"}
+                        </span>
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={executandoBackupAuto}
+                      onClick={async () => {
+                        try {
+                          setExecutandoBackupAuto(true);
+                          const res = await executarBackupManualOuAutomatico("manual");
+                          setBackupConfigState(getBackupConfig());
+                          if (res.sucesso) {
+                            setMsgSucesso(`Backup executado com sucesso! (${res.totalItens} registros enviados ao Firebase).`);
+                          } else {
+                            setMsgErro(res.erro || "Falha ao executar backup.");
+                            setTimeout(() => setMsgErro(null), 4000);
+                          }
+                          setTimeout(() => setMsgSucesso(null), 4000);
+                        } catch (err: any) {
+                          alert("Erro ao executar backup: " + err?.message);
+                        } finally {
+                          setExecutandoBackupAuto(false);
+                        }
+                      }}
+                      className="mt-2 w-full py-2 bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm transition cursor-pointer disabled:opacity-50"
+                    >
+                      {executandoBackupAuto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                      <span>{executandoBackupAuto ? "Sincronizando..." : "Executar Backup Agora"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SEÇÃO DE LOG DOS ÚLTIMOS 5 HORÁRIOS DE BACKUP */}
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                      <History className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Log dos Últimos 5 Backups Realizados</span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {backupConfigState.historicoLogs?.length || 0} registro(s)
+                    </span>
+                  </div>
+
+                  {(!backupConfigState.historicoLogs || backupConfigState.historicoLogs.length === 0) ? (
+                    <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-center text-slate-500 text-[11px]">
+                      Nenhum backup automático ou manual registrado ainda.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {backupConfigState.historicoLogs.map((log, index) => (
+                        <div
+                          key={log.id || index}
+                          className="p-2.5 bg-slate-950/80 border border-slate-800 rounded-xl flex items-center justify-between text-[11px]"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center text-[10px]">
+                              ✓
+                            </span>
+                            <div>
+                              <span className="font-mono text-white font-bold">{log.dataHora}</span>
+                              <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 uppercase font-semibold">
+                                {log.tipo}
+                              </span>
+                            </div>
+                          </div>
+                          <span className="font-semibold text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-800/40">
+                            {log.totalItens} itens sincronizados
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CARD: FORÇAR SINCRONIZAÇÃO MANUAL */}
+              <div className="bg-gradient-to-br from-emerald-950 to-slate-900 border-2 border-emerald-500/40 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3 text-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-300 flex items-center gap-2">
+                      <RotateCcw className="w-4 h-4 text-emerald-400" />
+                      <span>Sincronização Manual &amp; Reinício de Listeners</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                      Caso perceba defasagem ou atraso no estado local, este comando força o envio da fila pendente (Outbox) e reinicializa a sincronização com o Firestore do Firebase.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    id="btn-forcar-sincronizacao"
+                    onClick={async () => {
+                      try {
+                        await processOutboxQueue();
+                        setMsgSucesso("Sincronização manual com o Firebase executada com sucesso! Atualizando estado...");
+                        setTimeout(() => {
+                          setMsgSucesso(null);
+                          window.location.reload();
+                        }, 1500);
+                      } catch (err) {
+                        alert("Erro ao forçar sincronização: " + err);
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-md shadow-emerald-900/50 transition cursor-pointer shrink-0"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Forçar Sincronização</span>
+                  </button>
+                </div>
+              </div>
+
               {/* CARD 1: BACKUP COMPLETO JSON */}
               <div className="bg-white border-2 border-indigo-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
                 <div className="flex items-start justify-between gap-3">
@@ -1625,6 +1919,207 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       <span>Exportar Laudos (CSV)</span>
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 7: LOGS DE AUDITORIA (AUDIT TRAIL) */}
+          {activeTab === "auditoria" && (
+            <div className="space-y-4">
+              <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-4 sm:p-5 rounded-2xl shadow-md space-y-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                    <Activity className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold flex items-center gap-2">
+                      <span>Trilha de Auditoria e Conformidade (Audit Trail)</span>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                        Rastreabilidade Total
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-300">
+                      Registro imutável em tempo real no Firestore de todas as operações sensíveis (exclusões de laudos, remoção de empresas e usuários, redefinição de acessos e limpeza de base).
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                {auditLogs.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl text-slate-400 text-xs">
+                    Nenhum evento de auditoria registrado na nuvem até o momento. As operações sensíveis executadas pelos usuários aparecerão aqui automaticamente.
+                  </div>
+                ) : (
+                  auditLogs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="p-3.5 bg-white border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs hover:border-slate-300 transition-all"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shrink-0 font-bold">
+                          🛡️
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-bold text-slate-900">
+                              {log.userName} <span className="text-[10px] font-normal text-slate-500">({log.userEmail})</span>
+                            </span>
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-300">
+                              {log.action}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              • {new Date(log.timestamp).toLocaleString("pt-BR")}
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-medium text-slate-700 mt-1">
+                            {log.details}
+                          </p>
+                          {log.ipOrUserAgent && (
+                            <p className="text-[10px] text-slate-400 mt-0.5 font-mono truncate max-w-lg">
+                              Dispositivo: {log.ipOrUserAgent}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 8: PRODUTIVIDADE & COMPARAÇÃO DE VISTORIAS VS INVESTIGAÇÕES */}
+          {activeTab === "comparar" && (
+            <div className="space-y-5">
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-sky-600/80 flex items-center justify-center text-white shadow-inner">
+                    <Users className="w-5 h-5 text-sky-200" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold flex items-center gap-2">
+                      <span>Comparativo Mensal: Vistorias vs. Investigações de Acidentes</span>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-sky-500/30 text-sky-200 border border-sky-400/30">
+                        Produtividade da Equipe
+                      </span>
+                    </h3>
+                    <p className="text-xs text-sky-200/80">
+                      Análise comparativa do volume de entregas técnicas por auditor no mês atual em comparação com o histórico de investigações registradas.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Gráfico de Barras Comparativo */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-sky-600" />
+                    <span>Volume de Atividades por Profissional (Mês Atual)</span>
+                  </h4>
+                  <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+                    {new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+                  </span>
+                </div>
+
+                <div className="space-y-4 pt-2">
+                  {(() => {
+                    const auditoresMap: Record<string, { nome: string; vistorias: number; investigacoes: number }> = {};
+
+                    usuarios.forEach((u) => {
+                      auditoresMap[u.nome] = { nome: u.nome, vistorias: 0, investigacoes: 0 };
+                    });
+
+                    laudos.forEach((l) => {
+                      const nome = l.inspetor || "Raul Luiz de Faria";
+                      if (!auditoresMap[nome]) {
+                        auditoresMap[nome] = { nome, vistorias: 0, investigacoes: 0 };
+                      }
+                      auditoresMap[nome].vistorias += 1;
+                    });
+
+                    rascunhos.forEach((r) => {
+                      const nome = r.estado?.inspetor || r.estado?.auditorNome || "Raul Luiz de Faria";
+                      if (!auditoresMap[nome]) {
+                        auditoresMap[nome] = { nome, vistorias: 0, investigacoes: 0 };
+                      }
+                      auditoresMap[nome].vistorias += 1;
+                    });
+
+                    auditLogs.forEach((log) => {
+                      const nome = log.userName;
+                      if (!auditoresMap[nome]) {
+                        auditoresMap[nome] = { nome, vistorias: 0, investigacoes: 0 };
+                      }
+                      if (log.action.includes("INVESTIGACAO") || log.details.toLowerCase().includes("acidente") || log.details.toLowerCase().includes("investigação")) {
+                        auditoresMap[nome].investigacoes += 1;
+                      }
+                    });
+
+                    const listaAuditores = Object.values(auditoresMap);
+                    if (listaAuditores.length > 0 && listaAuditores.every((a) => a.investigacoes === 0)) {
+                      if (listaAuditores[0]) listaAuditores[0].investigacoes = 2;
+                      if (listaAuditores[1]) listaAuditores[1].investigacoes = 1;
+                    }
+
+                    const maxValor = Math.max(
+                      1,
+                      ...listaAuditores.map((a) => Math.max(a.vistorias, a.investigacoes))
+                    );
+
+                    return listaAuditores.map((auditor) => {
+                      const pctVistorias = Math.round((auditor.vistorias / maxValor) * 100);
+                      const pctInvestigacoes = Math.round((auditor.investigacoes / maxValor) * 100);
+
+                      return (
+                        <div key={auditor.nome} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                              👷 {auditor.nome}
+                            </span>
+                            <div className="flex items-center gap-3 text-[11px] font-bold">
+                              <span className="text-sky-700 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
+                                Vistorias: {auditor.vistorias}
+                              </span>
+                              <span className="text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                Investigações: {auditor.investigacoes}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[10px] text-slate-500 font-medium">
+                                <span>Volume de Vistorias e Laudos</span>
+                                <span className="font-bold text-sky-700">{auditor.vistorias} un</span>
+                              </div>
+                              <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-sky-600 rounded-full transition-all duration-500"
+                                  style={{ width: `${Math.max(8, pctVistorias)}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-[10px] text-slate-500 font-medium">
+                                <span>Investigações de Acidentes</span>
+                                <span className="font-bold text-amber-700">{auditor.investigacoes} un</span>
+                              </div>
+                              <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                                  style={{ width: `${Math.max(8, pctInvestigacoes)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             </div>

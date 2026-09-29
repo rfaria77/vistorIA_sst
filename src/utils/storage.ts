@@ -11,6 +11,7 @@ import {
   salvarUsuarioNuvem,
   excluirUsuarioNuvem,
   salvarEmpresaNuvem,
+  excluirEmpresaNuvem,
   salvarRascunhoNuvem,
   excluirRascunhoNuvem,
   salvarLaudoNuvem,
@@ -19,6 +20,7 @@ import {
   excluirProgramacaoNuvem,
   criarSessaoAssinaturaNuvem,
   limparDadosDeTesteNuvem,
+  registrarAuditoriaNuvem,
 } from "./firebaseSync";
 
 export const STORAGE_KEYS = {
@@ -299,7 +301,30 @@ export function salvarEmpresa(empresa: Omit<Empresa, "id"> & { id?: string }): E
 
   localStorage.setItem(STORAGE_KEYS.EMPRESAS, JSON.stringify(empresas));
   salvarEmpresaNuvem(nova).catch((err) => console.warn("Sync nuvem empresa:", err));
+  
+  const usuarioAuth = getUsuarioAutenticado();
+  registrarAuditoriaNuvem(
+    usuarioAuth || { id: "sistema", nome: "Sistema", email: "sistema@vistoriasst.com" },
+    "EMPRESA_SALVA",
+    `Empresa/Cliente cadastrada ou atualizada: "${nova.nome}" (CNPJ/Doc: ${nova.cnpj || "N/A"})`
+  ).catch(() => {});
+
   return nova;
+}
+
+export function excluirEmpresa(id: string): void {
+  const empresas = getEmpresas();
+  const empAlvo = empresas.find((e) => e.id === id);
+  const filtrados = empresas.filter((e) => e.id !== id);
+  localStorage.setItem(STORAGE_KEYS.EMPRESAS, JSON.stringify(filtrados));
+  excluirEmpresaNuvem(id).catch((err) => console.warn("Sync nuvem excluir empresa:", err));
+
+  const usuarioAuth = getUsuarioAutenticado();
+  registrarAuditoriaNuvem(
+    usuarioAuth || { id: "sistema", nome: "Sistema", email: "sistema@vistoriasst.com" },
+    "EMPRESA_EXCLUIDA",
+    `Empresa excluída: "${empAlvo?.nome || id}"`
+  ).catch(() => {});
 }
 
 export const RASCUNHOS_PADRAO: RascunhoVistoria[] = [];
@@ -426,15 +451,32 @@ export function salvarRascunho(estado: VistoriaState): RascunhoVistoria {
   }
 
   salvarRascunhoNuvem(novo).catch((err) => console.warn("Sync nuvem rascunho:", err));
+
+  const usuarioAuth = getUsuarioAutenticado();
+  registrarAuditoriaNuvem(
+    usuarioAuth || { id: "sistema", nome: "Sistema", email: "sistema@vistoriasst.com" },
+    "RASCUNHO_SALVO",
+    `Vistoria salva em rascunho (Em Andamento): "${nomeEmpresa}" (${estado.evidencias?.length || 0} apontamentos)`
+  ).catch(() => {});
+
   return novo;
 }
 
 export function deletarRascunho(id: string): void {
-  const rascunhos = getRascunhos().filter((r) => r.id !== id);
+  const rascunhos = getRascunhos();
+  const alvo = rascunhos.find((r) => r.id === id);
+  const filtrados = rascunhos.filter((r) => r.id !== id);
   try {
-    localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(rascunhos));
+    localStorage.setItem(STORAGE_KEYS.RASCUNHOS, JSON.stringify(filtrados));
   } catch {}
   excluirRascunhoNuvem(id).catch((err) => console.warn("Sync nuvem excluir rascunho:", err));
+
+  const usuarioAuth = getUsuarioAutenticado();
+  registrarAuditoriaNuvem(
+    usuarioAuth || { id: "sistema", nome: "Sistema", email: "sistema@vistoriasst.com" },
+    "RASCUNHO_EXCLUIDO",
+    `Rascunho excluído: "${alvo?.empresa || id}"`
+  ).catch(() => {});
 }
 export const excluirRascunho = deletarRascunho;
 
@@ -479,13 +521,30 @@ export function salvarLaudo(laudo: Omit<LaudoEmitido, "id" | "numero">): LaudoEm
     }
   }
   salvarLaudoNuvem(novo).catch((err) => console.warn("Sync nuvem laudo:", err));
+
+  const usuarioAuth = getUsuarioAutenticado();
+  registrarAuditoriaNuvem(
+    usuarioAuth || { id: "sistema", nome: "Sistema", email: "sistema@vistoriasst.com" },
+    "LAUDO_EMITIDO",
+    `Laudo Técnico nº #${novo.numero} emitido com sucesso para a empresa "${novo.empresa}" (${novo.totalItens} itens avaliados)`
+  ).catch(() => {});
+
   return novo;
 }
 
 export function excluirLaudo(id: string): void {
-  const laudos = getLaudos().filter((l) => l.id !== id);
-  localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify(laudos));
+  const laudos = getLaudos();
+  const alvo = laudos.find((l) => l.id === id);
+  const filtrados = laudos.filter((l) => l.id !== id);
+  localStorage.setItem(STORAGE_KEYS.LAUDOS, JSON.stringify(filtrados));
   excluirLaudoNuvem(id).catch((err) => console.warn("Sync nuvem excluir laudo:", err));
+
+  const usuarioAuth = getUsuarioAutenticado();
+  registrarAuditoriaNuvem(
+    usuarioAuth || { id: "sistema", nome: "Sistema", email: "sistema@vistoriasst.com" },
+    "LAUDO_EXCLUIDO",
+    `Laudo nº #${alvo?.numero || id} excluído permanentemente (Empresa: "${alvo?.empresa || "N/A"}")`
+  ).catch(() => {});
 }
 export const deletarLaudo = excluirLaudo;
 
@@ -609,86 +668,25 @@ export function gerarLinkWhatsApp(
 
 // --- GESTÃO DE PROGRAMAÇÃO DE RELATÓRIOS E VISTORIAS ---
 
-export const PROGRAMACOES_INICIAIS_EXEMPLO: ProgramacaoRelatorio[] = [
-  {
-    id: "prog-demo-1",
-    empresaNome: "Indústria Metalmecânica Modelo S.A.",
-    tipoRelatorio: "Inspeção Mensal de NR 12 & Máquinas Operatrizes",
-    periodicidade: "mensal",
-    dataUltimoRelatorio: "18/08/2026",
-    dataProximaProgramada: "2026-09-18",
-    auditorResponsavel: "Raul Luiz de Faria",
-    observacoes: "Verificar intertravamentos de segurança e paradas de emergência em prensas.",
-    criadoEm: "18/08/2026",
-  },
-  {
-    id: "prog-demo-2",
-    empresaNome: "Indústria Metalmecânica Modelo S.A.",
-    tipoRelatorio: "Auditoria Semestral de Elétrica NR 10 & Prontuário PIE",
-    periodicidade: "semestral",
-    dataUltimoRelatorio: "25/03/2026",
-    dataProximaProgramada: "2026-09-25",
-    auditorResponsavel: "Marcos Vinicius Ferreira Mendes",
-    observacoes: "Revisar laudo SPDA e termografia dos quadros QGBT.",
-    criadoEm: "25/03/2026",
-  },
-  {
-    id: "prog-demo-3",
-    empresaNome: "Construtora Horizonte Ltda",
-    tipoRelatorio: "Vistoria Semanal de Canteiro de Obras NR 18",
-    periodicidade: "semanal",
-    dataUltimoRelatorio: "15/09/2026",
-    dataProximaProgramada: "2026-09-22",
-    auditorResponsavel: "Raul Luiz de Faria",
-    observacoes: "Inspecionar andaimes fachadeiros, guarda-corpos e trabalho em altura NR 35.",
-    criadoEm: "15/09/2026",
-  },
-  {
-    id: "prog-demo-4",
-    empresaNome: "Logística Rápida Express",
-    tipoRelatorio: "Auditoria Quinzenal de Empilhadeiras e Ergonomia NR 17",
-    periodicidade: "quinzenal",
-    dataUltimoRelatorio: "01/09/2026",
-    dataProximaProgramada: "2026-09-16",
-    auditorResponsavel: "Marcos Vinicius Ferreira Mendes",
-    observacoes: "Checklist de buzina, faróis, extintores e rotação de operadores.",
-    criadoEm: "01/09/2026",
-  },
-  {
-    id: "prog-demo-5",
-    empresaNome: "Hospital São Lucas",
-    tipoRelatorio: "Avaliação Anual do Programa de Gerenciamento de Riscos (PGR)",
-    periodicidade: "anual",
-    dataUltimoRelatorio: "10/11/2025",
-    dataProximaProgramada: "2026-11-10",
-    auditorResponsavel: "Raul Luiz de Faria",
-    observacoes: "Reavaliação de riscos biológicos NR 32 e plano de ação integrado.",
-    criadoEm: "10/11/2025",
-  },
-  {
-    id: "prog-demo-6",
-    empresaNome: "Hospital São Lucas",
-    tipoRelatorio: "Vistoria Eventual por Demanda / Quase-Acidente",
-    periodicidade: "eventual",
-    dataUltimoRelatorio: "05/09/2026",
-    dataProximaProgramada: "",
-    auditorResponsavel: "Marcos Vinicius Ferreira Mendes",
-    observacoes: "Realizada somente mediante solicitação da CIPA ou ocorrência extraordinária.",
-    criadoEm: "05/09/2026",
-  },
-];
+export const PROGRAMACOES_INICIAIS_EXEMPLO: ProgramacaoRelatorio[] = [];
 
 export function getProgramacoes(): ProgramacaoRelatorio[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.PROGRAMACOES);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify(PROGRAMACOES_INICIAIS_EXEMPLO));
-      // Salva também no Firestore
-      PROGRAMACOES_INICIAIS_EXEMPLO.forEach((p) => salvarProgramacaoNuvem(p));
-      return PROGRAMACOES_INICIAIS_EXEMPLO;
+      localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify([]));
+      return [];
     }
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // Remove programações de demonstração antigas
+    const limpos = parsed.filter(
+      (p: ProgramacaoRelatorio) => !p.id.startsWith("prog-demo")
+    );
+    if (limpos.length !== parsed.length) {
+      localStorage.setItem(STORAGE_KEYS.PROGRAMACOES, JSON.stringify(limpos));
+    }
+    return limpos;
   } catch {
     return [];
   }

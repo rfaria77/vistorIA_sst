@@ -1,6 +1,9 @@
 import React from "react";
-import { ShieldAlert, Settings, Plus, Sparkles, Building2, CheckCircle2, ArrowLeft, LayoutGrid, BarChart3, CalendarDays } from "lucide-react";
+import { ShieldAlert, Settings, Plus, Sparkles, Building2, CheckCircle2, ArrowLeft, LayoutGrid, BarChart3, CalendarDays, Bell, BellRing, HelpCircle } from "lucide-react";
 import { PWAInstallButton } from "./PWAInstallButton";
+import { SyncStatusIndicator } from "./SyncStatusIndicator";
+import { ConnectionHealthMonitor } from "./ConnectionHealthMonitor";
+import { solicitarPermissaoNotificacao, dispararNotificacaoLocal } from "../utils/pushNotifications";
 
 interface NavbarProps {
   currentStep: number;
@@ -12,6 +15,7 @@ interface NavbarProps {
   onAbrirDashboard?: () => void;
   onAbrirProgramacao?: () => void;
   isAdmin?: boolean;
+  onOpenTour?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -24,9 +28,26 @@ export const Navbar: React.FC<NavbarProps> = ({
   onAbrirDashboard,
   onAbrirProgramacao,
   isAdmin = false,
+  onOpenTour,
 }) => {
+  const [notifAtivadas, setNotifAtivadas] = React.useState<boolean>(
+    typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted"
+  );
+
+  const handleAtivarNotif = async () => {
+    const ok = await solicitarPermissaoNotificacao();
+    setNotifAtivadas(ok);
+    if (ok) {
+      dispararNotificacaoLocal("VistorIA SST — Notificações Ativadas! 🔔", "Você receberá alertas em tempo real de assinaturas remotas e novas programações de relatórios.");
+    } else {
+      alert("Permissão de notificações negada ou indisponível no navegador.");
+    }
+  };
+
   return (
-    <header className="bg-slate-900 text-white sticky top-0 z-40 shadow-md">
+    <>
+      <ConnectionHealthMonitor />
+      <header className="bg-slate-900 text-white sticky top-0 z-40 shadow-md">
       <div className="max-w-3xl mx-auto px-3 sm:px-4 py-3">
         {/* Top Brand & Actions */}
         <div className="flex items-center justify-between gap-2 mb-3">
@@ -69,6 +90,32 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <div className="flex items-center gap-1.5">
             <PWAInstallButton />
+            <SyncStatusIndicator />
+            <button
+              type="button"
+              id="btn-ativar-notificacoes"
+              onClick={handleAtivarNotif}
+              className={`p-1.5 rounded-lg text-xs font-bold flex items-center justify-center border transition-colors cursor-pointer ${
+                notifAtivadas
+                  ? "bg-emerald-950/80 text-emerald-300 border-emerald-700/80"
+                  : "bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700"
+              }`}
+              title={notifAtivadas ? "Notificações PWA Ativadas" : "Ativar Notificações Push"}
+            >
+              {notifAtivadas ? <BellRing className="w-4 h-4 text-emerald-400" /> : <Bell className="w-4 h-4 text-slate-400" />}
+            </button>
+
+            {onOpenTour && (
+              <button
+                type="button"
+                id="btn-abrir-tour"
+                onClick={onOpenTour}
+                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 rounded-lg text-xs font-bold flex items-center justify-center border border-slate-700 transition-colors cursor-pointer"
+                title="Tour Interativo (Onboarding)"
+              >
+                <HelpCircle className="w-4 h-4 text-amber-400" />
+              </button>
+            )}
 
             {onVoltarHub && (
               <button
@@ -187,5 +234,6 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
       </div>
     </header>
+    </>
   );
 };

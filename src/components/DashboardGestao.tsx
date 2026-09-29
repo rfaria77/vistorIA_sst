@@ -32,6 +32,7 @@ import {
   RotateCcw,
   CalendarDays,
   User,
+  Loader2,
 } from "lucide-react";
 import { LaudoEmitido, RascunhoVistoria, UsuarioAuditor, Apontamento } from "../types";
 import { TITULOS_NR, formatarBRL } from "../data/nr28Data";
@@ -217,6 +218,33 @@ export const DashboardGestao: React.FC<DashboardGestaoProps> = ({
   const [apenasMinhasVistorias, setApenasMinhasVistorias] = useState<boolean>(false);
   const [modoGraficoBarras, setModoGraficoBarras] = useState<"periodo" | "nr">("periodo");
   const [usarDemoSeVazio, setUsarDemoSeVazio] = useState<boolean>(true);
+
+  // Gemini AI Executive Summary state
+  const [resumoGemini, setResumoGemini] = useState<string | null>(null);
+  const [gerandoResumo, setGerandoResumo] = useState<boolean>(false);
+  const [erroResumo, setErroResumo] = useState<string | null>(null);
+
+  const handleGerarResumoGemini = async () => {
+    try {
+      setGerandoResumo(true);
+      setErroResumo(null);
+      const resp = await fetch("/api/ai/resumo-executivo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apontamentos: apontamentosFiltrados.map((i) => i.apontamento) }),
+      });
+      const data = await resp.json();
+      if (data.success && data.resumo) {
+        setResumoGemini(data.resumo);
+      } else {
+        setErroResumo(data.error || "Falha ao gerar resumo executivo.");
+      }
+    } catch (err: any) {
+      setErroResumo(err?.message || "Erro de conexão ao gerar resumo.");
+    } finally {
+      setGerandoResumo(false);
+    }
+  };
 
   // Lista de empresas únicas encontradas nos dados
   const listaEmpresas = useMemo(() => {
@@ -615,6 +643,63 @@ export const DashboardGestao: React.FC<DashboardGestaoProps> = ({
             </button>
           </div>
         )}
+
+        {/* Gemini AI Executive Summary Card */}
+        <section className="bg-gradient-to-br from-indigo-950/80 via-slate-900 to-slate-950 border border-indigo-500/30 rounded-2xl p-4 sm:p-6 shadow-xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-indigo-900/60">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                  Resumo Executivo Inteligente (Gemini AI)
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    Gemini 3.8 Flash
+                  </span>
+                </h3>
+                <p className="text-xs text-indigo-200/70">
+                  Análise preditiva por IA das principais tendências de inconformidades e riscos periciais identificados nas vistorias.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGerarResumoGemini}
+              disabled={gerandoResumo}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg shadow-indigo-950 transition-all cursor-pointer shrink-0"
+            >
+              {gerandoResumo ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Analisando vistorias...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" /> {resumoGemini ? "Atualizar Resumo IA" : "Gerar Resumo Executivo"}
+                </>
+              )}
+            </button>
+          </div>
+
+          {erroResumo && (
+            <div className="bg-rose-950/60 border border-rose-500/40 text-rose-200 p-3 rounded-xl text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{erroResumo}</span>
+            </div>
+          )}
+
+          {resumoGemini ? (
+            <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 sm:p-5 text-xs text-slate-200 leading-relaxed space-y-3 prose prose-invert max-w-none">
+              <div className="whitespace-pre-line">{resumoGemini}</div>
+            </div>
+          ) : (
+            <div className="bg-indigo-950/30 border border-indigo-900/40 rounded-xl p-6 text-center text-xs text-indigo-300/80 space-y-2">
+              <p className="font-semibold">Clique no botão acima para gerar a análise pericial automatizada com Gemini AI.</p>
+              <p className="text-[11px] text-slate-400">O motor cruzará todos os apontamentos filtrados para destacar as prioridades de correção e passivos da NR 28.</p>
+            </div>
+          )}
+        </section>
 
         {/* Filtros Executivos e Seletor de Período */}
         <section

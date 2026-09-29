@@ -29,6 +29,7 @@ import {
   CalendarDays,
   Sparkles,
   Unlock,
+  ShieldAlert,
 } from "lucide-react";
 import { PWAInstallButton } from "./PWAInstallButton";
 import { InteractiveTour } from "./InteractiveTour";
@@ -58,9 +59,11 @@ interface InspectionHubProps {
   onIniciarNovaInspecao: () => void;
   onContinuarInspecao: (estado: VistoriaState) => void;
   onLogout: () => void;
+  onVoltarPaginaInicial?: () => void;
   onAbrirAdmin?: () => void;
   onAbrirDashboard?: () => void;
   onAbrirProgramacao?: () => void;
+  onAbrirInvestigacaoAcidente?: () => void;
   onLaudoExcluido?: () => void;
 }
 
@@ -69,9 +72,11 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
   onIniciarNovaInspecao,
   onContinuarInspecao,
   onLogout,
+  onVoltarPaginaInicial,
   onAbrirAdmin,
   onAbrirDashboard,
   onAbrirProgramacao,
+  onAbrirInvestigacaoAcidente,
   onLaudoExcluido,
 }) => {
   const [rascunhos, setRascunhos] = useState<RascunhoVistoria[]>([]);
@@ -173,16 +178,12 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
   };
 
   const handleLiberarParaEdicao = (laudo: LaudoEmitido) => {
-    if (usuario.perfil !== "admin") {
-      alert("Operação restrita a administradores.");
-      return;
-    }
     if (!laudo.estado) {
       alert("Erro: Os dados de estado desta inspeção não foram encontrados para recuperação.");
       return;
     }
 
-    const confirmMsg = `ATENÇÃO (Perfil Administrativo):\n\nDeseja realmente liberar o laudo #${laudo.numero || ""} da empresa "${laudo.empresa}" para edição?\n\nO laudo assinado será convertido em rascunho em andamento, permitindo que novos apontamentos e alterações sejam feitos.`;
+    const confirmMsg = `ATENÇÃO:\n\nDeseja realmente liberar o laudo #${laudo.numero || ""} da empresa "${laudo.empresa}" para edição?\n\nO laudo assinado será convertido em rascunho em andamento, permitindo que novos apontamentos e alterações sejam feitos.`;
 
     if (window.confirm(confirmMsg)) {
       salvarRascunho(laudo.estado);
@@ -300,64 +301,18 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
             </div>
           </div>
 
-          {/* User Profile & Actions */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="text-right hidden sm:block">
-              <div className="text-xs font-bold text-white flex items-center justify-end gap-1.5">
-                <User className="w-3.5 h-3.5 text-sky-400" />
-                <span>{usuario.nome}</span>
-                <span
-                  className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${
-                    usuario.perfil === "admin"
-                      ? "bg-indigo-900/80 text-indigo-300 border border-indigo-700"
-                      : "bg-sky-900/80 text-sky-300 border border-sky-700"
-                  }`}
-                >
-                  {usuario.perfil === "admin" ? "ADMINISTRADOR" : "INSPETOR"}
-                </span>
-                {isBiometriaHabilitada(usuario.id) && (
-                  <span
-                    className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 inline-flex items-center gap-1"
-                    title="Autenticação Biométrica ativa neste dispositivo"
-                  >
-                    <Fingerprint className="w-2.5 h-2.5 text-emerald-400" />
-                    <span className="hidden md:inline">Biometria Ativa</span>
-                  </span>
-                )}
-              </div>
-              <div className="text-[10px] text-slate-400">
-                {usuario.cargo} • {usuario.registro}
-              </div>
-            </div>
-
+          {/* User Profile & Minimal Actions */}
+          <div className="flex items-center gap-2">
             <PWAInstallButton />
 
-            <button
-              type="button"
-              id="btn-hub-tour-guiado"
-              onClick={handleReiniciarTour}
-              className="px-3 py-2 bg-gradient-to-r from-sky-500/20 via-indigo-500/20 to-purple-500/20 hover:from-sky-500/30 hover:to-indigo-500/30 text-sky-300 hover:text-white border border-sky-400/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs group"
-              title="Iniciar Tour Interativo do Hub de Inspeção"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-sky-400 group-hover:rotate-12 transition-transform" />
-              <span className="hidden sm:inline">Tour Guiado</span>
-            </button>
-
-            {onAbrirProgramacao && (
+            {onVoltarPaginaInicial && (
               <button
                 type="button"
-                id="btn-hub-programacao"
-                onClick={onAbrirProgramacao}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white border border-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer relative"
-                title="Gestão de Programação e Prazos por Empresa"
+                onClick={onVoltarPaginaInicial}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/80 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Voltar à Página Inicial"
               >
-                <CalendarDays className="w-3.5 h-3.5 text-sky-400" />
-                <span className="hidden sm:inline">Programação</span>
-                {programacoesAtrasadas.length > 0 && (
-                  <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px] font-black">
-                    {programacoesAtrasadas.length}
-                  </span>
-                )}
+                <span>🏠 Início</span>
               </button>
             )}
 
@@ -366,11 +321,42 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                 type="button"
                 id="btn-hub-dashboard"
                 onClick={onAbrirDashboard}
-                className="px-3 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                title="Abrir Dashboard de Gestão com Gráficos por NR e Multas Recharts"
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white border border-slate-700/80 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Abrir Dashboard de Gestão"
               >
-                <BarChart3 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Dashboard de Gestão</span>
+                <BarChart3 className="w-3.5 h-3.5 text-sky-400" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </button>
+            )}
+
+            {onAbrirProgramacao && (
+              <button
+                type="button"
+                id="btn-hub-programacao"
+                onClick={onAbrirProgramacao}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700/80 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer relative"
+                title="Gestão de Programação e Prazos"
+              >
+                <CalendarDays className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Prazos</span>
+                {programacoesAtrasadas.length > 0 && (
+                  <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px] font-black">
+                    {programacoesAtrasadas.length}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {onAbrirInvestigacaoAcidente && (
+              <button
+                type="button"
+                id="btn-hub-investigacao-acidente"
+                onClick={onAbrirInvestigacaoAcidente}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-rose-300 hover:text-white border border-slate-700/80 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Módulo de Investigação de Acidentes"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
+                <span className="hidden md:inline">Acidentes</span>
               </button>
             )}
 
@@ -379,25 +365,11 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                 type="button"
                 id="btn-hub-gestao-adm"
                 onClick={onAbrirAdmin}
-                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-                title="Acessar Painel de Gestão Corporativa e Usuários"
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700/80 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Painel de Gestão ADM"
               >
-                <Settings className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Gestão ADM</span>
-              </button>
-            )}
-
-            {rascunhosParados.length > 0 && (
-              <button
-                type="button"
-                id="btn-notificacao-parados-header"
-                onClick={() => setAbaAtiva(abaAtiva === "parados" ? "andamento" : "parados")}
-                className="px-2.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer animate-pulse"
-                title={`${rascunhosParados.length} vistoria(s) sem edição há mais de 7 dias`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">{rascunhosParados.length} Parada(s) (+7d)</span>
-                <span className="sm:hidden">{rascunhosParados.length}</span>
+                <Settings className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden md:inline">ADM</span>
               </button>
             )}
 
@@ -405,11 +377,10 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
               type="button"
               id="btn-hub-logout"
               onClick={onLogout}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Encerrar Sessão / Trocar de Usuário"
+              className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700/80 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              title={`Sessão de ${usuario.nome} (${usuario.cargo}) - Sair`}
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Trocar Usuário</span>
             </button>
           </div>
         </div>
@@ -1007,29 +978,17 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
                         )}
                       </div>
 
-                      {/* Admin Unlock or Disabled Edit Button */}
-                      {usuario.perfil === "admin" ? (
-                        <button
-                          type="button"
-                          id={`btn-liberar-edicao-${laudo.id}`}
-                          onClick={() => handleLiberarParaEdicao(laudo)}
-                          className="w-full h-8 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                          title="Liberar inspeção assinada para edição (Restrito a Administrador)"
-                        >
-                          <Unlock className="w-3.5 h-3.5 text-white" />
-                          <span>🔓 Liberar p/ Edição (ADM)</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="w-full h-7.5 bg-slate-900/50 border border-slate-800 text-slate-400 text-[10px] font-semibold rounded-lg flex items-center justify-center gap-1.5 cursor-not-allowed opacity-75"
-                          title="Documento jurídico oficial finalizado. Edição bloqueada permanentemente."
-                        >
-                          <Lock className="w-3 h-3 text-slate-400" />
-                          <span>Edição Bloqueada (Documento Assinado)</span>
-                        </button>
-                      )}
+                      {/* Unlock Edit Button for All Users */}
+                      <button
+                        type="button"
+                        id={`btn-liberar-edicao-${laudo.id}`}
+                        onClick={() => handleLiberarParaEdicao(laudo)}
+                        className="w-full h-8 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                        title="Liberar inspeção assinada para edição e conversão em rascunho"
+                      >
+                        <Unlock className="w-3.5 h-3.5 text-white" />
+                        <span>🔓 Liberar p/ Edição</span>
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1209,30 +1168,28 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
             {/* Modal Footer */}
             <div className="p-4 border-t border-slate-800 bg-slate-950 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 flex-wrap">
-                {usuario.perfil === "admin" && (
-                  <>
-                    <button
-                      type="button"
-                      id={`btn-modal-liberar-edicao-${laudoVisualizando.id}`}
-                      onClick={() => handleLiberarParaEdicao(laudoVisualizando)}
-                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                      title="Liberar este laudo assinado para edição (Restrito a Administrador)"
-                    >
-                      <Unlock className="w-3.5 h-3.5 text-white" />
-                      <span>Liberar p/ Edição (ADM)</span>
-                    </button>
+                <button
+                  type="button"
+                  id={`btn-modal-liberar-edicao-${laudoVisualizando.id}`}
+                  onClick={() => handleLiberarParaEdicao(laudoVisualizando)}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  title="Liberar este laudo assinado para edição"
+                >
+                  <Unlock className="w-3.5 h-3.5 text-white" />
+                  <span>Liberar p/ Edição</span>
+                </button>
 
-                    <button
-                      type="button"
-                      id={`btn-modal-excluir-laudo-${laudoVisualizando.id}`}
-                      onClick={() => handleExcluirLaudo(laudoVisualizando.id, laudoVisualizando.empresa, laudoVisualizando.numero)}
-                      className="px-3.5 py-2 bg-rose-950/70 hover:bg-rose-900/90 text-rose-300 border border-rose-800 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
-                      title="Excluir este laudo permanentemente (Restrito a Administrador)"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                      <span>Excluir Laudo (ADM)</span>
-                    </button>
-                  </>
+                {usuario.perfil === "admin" && (
+                  <button
+                    type="button"
+                    id={`btn-modal-excluir-laudo-${laudoVisualizando.id}`}
+                    onClick={() => handleExcluirLaudo(laudoVisualizando.id, laudoVisualizando.empresa, laudoVisualizando.numero)}
+                    className="px-3.5 py-2 bg-rose-950/70 hover:bg-rose-900/90 text-rose-300 border border-rose-800 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Excluir este laudo permanentemente (Restrito a Administrador)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Excluir Laudo (ADM)</span>
+                  </button>
                 )}
               </div>
 

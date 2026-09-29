@@ -344,6 +344,42 @@ app.post("/api/ai/enquadrar", async (req, res) => {
   });
 });
 
+// AI Resumo Executivo endpoint (Gemini AI)
+app.post("/api/ai/resumo-executivo", async (req, res) => {
+  const { apontamentos } = req.body;
+  const ai = getGenAI();
+  if (!ai) {
+    return res.status(500).json({ error: "GEMINI_API_KEY não configurada no ambiente." });
+  }
+
+  try {
+    const prompt = `Você é um Engenheiro Chefe de Segurança do Trabalho e Perito Sênior em SST.
+Analise os seguintes apontamentos e dados de não-conformidades de vistorias técnicas recentes:
+${JSON.stringify(apontamentos || [], null, 2)}
+
+Elabore um resumo executivo inteligente e estruturado em português contendo:
+1. **Tendências Principais**: Quais as Normas Regulamentadoras (NRs) e tipos de risco mais recorrentes.
+2. **Análise de Severidade**: Impacto potencial para a integridade dos trabalhadores e exposição a multas da NR 28.
+3. **Recomendações Estratégicas**: 3 ações prioritárias para a gestão corporativa mitigar os passivos identificados.
+
+Seja objetivo, profissional, pericial e use formatação Markdown limpa (tópicos com negrito).`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        temperature: 0.3,
+      },
+    });
+
+    const text = response.text || "Não foi possível gerar o resumo executivo.";
+    res.json({ success: true, resumo: text });
+  } catch (err: any) {
+    console.error("Erro ao gerar resumo executivo com Gemini:", err);
+    res.status(500).json({ error: err?.message || "Erro ao consultar Gemini AI" });
+  }
+});
+
 // Setup Vite or static serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

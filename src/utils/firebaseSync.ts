@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 import {
+  AuditLog,
   Empresa,
   LaudoEmitido,
   ProgramacaoRelatorio,
@@ -25,6 +26,8 @@ import {
   USUARIO_INSPETOR_MARCOS,
   USUARIOS_PADRAO,
 } from "./storage";
+import { enqueueOutboxAction } from "./syncQueue";
+import { recordSyncEvent } from "./syncDiagnostics";
 
 // Initialize Firebase App
 const app = !getApps().length
@@ -54,6 +57,17 @@ export async function testConnection(): Promise<boolean> {
       console.warn("Firebase offline: operando com cache local.");
     }
     return false;
+  }
+}
+
+export async function measureFirestoreLatency(): Promise<number> {
+  const start = performance.now();
+  try {
+    await getDocFromServer(doc(db, "test", "connection"));
+    const end = performance.now();
+    return Math.round(end - start);
+  } catch {
+    return -1;
   }
 }
 
@@ -107,9 +121,11 @@ export function subscribeUsuariosNuvem(
       }
 
       onUpdate(lista);
+      recordSyncEvent("usuarios", lista.length);
     },
     (err) => {
       console.warn("Erro ao escutar usuários na nuvem (usando local):", err);
+      recordSyncEvent("usuarios", 0, err.message);
     }
   );
 
@@ -128,8 +144,12 @@ export function subscribeEmpresasNuvem(
       const lista: Empresa[] = [];
       snapshot.forEach((d) => lista.push({ ...(d.data() as Empresa), id: d.id }));
       onUpdate(lista);
+      recordSyncEvent("empresas", lista.length);
     },
-    (err) => console.warn("Erro ao escutar empresas na nuvem:", err)
+    (err) => {
+      console.warn("Erro ao escutar empresas na nuvem:", err);
+      recordSyncEvent("empresas", 0, err.message);
+    }
   );
 }
 
@@ -146,8 +166,12 @@ export function subscribeRascunhosNuvem(
       // Ordena por data de atualização decrescente
       lista.sort((a, b) => (b.dataAtualizacao > a.dataAtualizacao ? 1 : -1));
       onUpdate(lista);
+      recordSyncEvent("rascunhos", lista.length);
     },
-    (err) => console.warn("Erro ao escutar rascunhos na nuvem:", err)
+    (err) => {
+      console.warn("Erro ao escutar rascunhos na nuvem:", err);
+      recordSyncEvent("rascunhos", 0, err.message);
+    }
   );
 }
 
@@ -163,8 +187,12 @@ export function subscribeLaudosNuvem(
       snapshot.forEach((d) => lista.push({ ...(d.data() as LaudoEmitido), id: d.id }));
       lista.sort((a, b) => (b.data > a.data ? 1 : -1));
       onUpdate(lista);
+      recordSyncEvent("laudos", lista.length);
     },
-    (err) => console.warn("Erro ao escutar laudos na nuvem:", err)
+    (err) => {
+      console.warn("Erro ao escutar laudos na nuvem:", err);
+      recordSyncEvent("laudos", 0, err.message);
+    }
   );
 }
 
@@ -184,8 +212,12 @@ export function subscribeProgramacoesNuvem(
         return dataA.localeCompare(dataB);
       });
       onUpdate(lista);
+      recordSyncEvent("programacoes", lista.length);
     },
-    (err) => console.warn("Erro ao escutar programações na nuvem:", err)
+    (err) => {
+      console.warn("Erro ao escutar programações na nuvem:", err);
+      recordSyncEvent("programacoes", 0, err.message);
+    }
   );
 }
 
@@ -210,61 +242,109 @@ export async function excluirUsuarioNuvem(id: string): Promise<void> {
 
 export async function salvarEmpresaNuvem(empresa: Empresa): Promise<void> {
   try {
+    if (!navigator.onLine) {
+      enqueueOutboxAction("setDoc", "empresas", empresa.id, empresa);
+      return;
+    }
     const docRef = doc(db, "empresas", empresa.id);
     await setDoc(docRef, sanitizeData(empresa), { merge: true });
   } catch (err) {
-    console.error("Erro ao salvar empresa no Firestore:", err);
+    console.warn("Erro ao salvar empresa no Firestore (enfileirando na Outbox):", err);
+    enqueueOutboxAction("setDoc", "empresas", empresa.id, empresa);
+  }
+}
+
+export async function excluirEmpresaNuvem(id: string): Promise<void> {
+  try {
+    if (!navigator.onLine) {
+      enqueueOutboxAction("deleteDoc", "empresas", id);
+      return;
+    }
+    await deleteDoc(doc(db, "empresas", id));
+  } catch (err) {
+    console.warn("Erro ao excluir empresa no Firestore (enfileirando na Outbox):", err);
+    enqueueOutboxAction("deleteDoc", "empresas", id);
   }
 }
 
 export async function salvarRascunhoNuvem(rascunho: RascunhoVistoria): Promise<void> {
   try {
+    if (!navigator.onLine) {
+      enqueueOutboxAction("setDoc", "rascunhos", rascunho.id, rascunho);
+      return;
+    }
     const docRef = doc(db, "rascunhos", rascunho.id);
     await setDoc(docRef, sanitizeData(rascunho), { merge: true });
   } catch (err) {
-    console.error("Erro ao salvar rascunho no Firestore:", err);
+    console.warn("Erro ao salvar rascunho no Firestore (enfileirando na Outbox):", err);
+    enqueueOutboxAction("setDoc", "rascunhos", rascunho.id, rascunho);
   }
 }
 
 export async function excluirRascunhoNuvem(id: string): Promise<void> {
   try {
+    if (!navigator.onLine) {
+      enqueueOutboxAction("deleteDoc", "rascunhos", id);
+      return;
+    }
     await deleteDoc(doc(db, "rascunhos", id));
   } catch (err) {
-    console.error("Erro ao excluir rascunho no Firestore:", err);
+    console.warn("Erro ao excluir rascunho no Firestore (enfileirando na Outbox):", err);
+    enqueueOutboxAction("deleteDoc", "rascunhos", id);
   }
 }
 
 export async function salvarLaudoNuvem(laudo: LaudoEmitido): Promise<void> {
   try {
+    if (!navigator.onLine) {
+      enqueueOutboxAction("setDoc", "laudos", laudo.id, laudo);
+      return;
+    }
     const docRef = doc(db, "laudos", laudo.id);
     await setDoc(docRef, sanitizeData(laudo), { merge: true });
   } catch (err) {
-    console.error("Erro ao salvar laudo no Firestore:", err);
+    console.warn("Erro ao salvar laudo no Firestore (enfileirando na Outbox):", err);
+    enqueueOutboxAction("setDoc", "laudos", laudo.id, laudo);
   }
 }
 
 export async function excluirLaudoNuvem(id: string): Promise<void> {
   try {
+    if (!navigator.onLine) {
+      enqueueOutboxAction("deleteDoc", "laudos", id);
+      return;
+    }
     await deleteDoc(doc(db, "laudos", id));
   } catch (err) {
-    console.error("Erro ao excluir laudo no Firestore:", err);
+    console.warn("Erro ao excluir laudo no Firestore (enfileirando na Outbox):", err);
+    enqueueOutboxAction("deleteDoc", "laudos", id);
   }
 }
 
 export async function salvarProgramacaoNuvem(programacao: ProgramacaoRelatorio): Promise<void> {
   try {
+    if (!navigator.onLine) {
+      enqueueOutboxAction("setDoc", "programacoes", programacao.id, programacao);
+      return;
+    }
     const docRef = doc(db, "programacoes", programacao.id);
     await setDoc(docRef, sanitizeData(programacao), { merge: true });
   } catch (err) {
-    console.error("Erro ao salvar programação no Firestore:", err);
+    console.warn("Erro ao salvar programação no Firestore (enfileirando na Outbox):", err);
+    enqueueOutboxAction("setDoc", "programacoes", programacao.id, programacao);
   }
 }
 
 export async function excluirProgramacaoNuvem(id: string): Promise<void> {
   try {
+    if (!navigator.onLine) {
+      enqueueOutboxAction("deleteDoc", "programacoes", id);
+      return;
+    }
     await deleteDoc(doc(db, "programacoes", id));
   } catch (err) {
-    console.error("Erro ao excluir programação no Firestore:", err);
+    console.warn("Erro ao excluir programação no Firestore (enfileirando na Outbox):", err);
+    enqueueOutboxAction("deleteDoc", "programacoes", id);
   }
 }
 
@@ -409,5 +489,45 @@ export async function limparDadosDeTesteNuvem(empresasPadrao: Empresa[]): Promis
   } catch (err) {
     console.error("Erro geral ao limpar dados de teste:", err);
   }
+}
+
+export async function registrarAuditoriaNuvem(
+  usuario: { id: string; nome: string; email: string },
+  action: string,
+  details: string
+): Promise<void> {
+  try {
+    const id = `audit-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const logItem: AuditLog = {
+      id,
+      timestamp: new Date().toISOString(),
+      userId: usuario.id,
+      userName: usuario.nome,
+      userEmail: usuario.email,
+      action,
+      details,
+      ipOrUserAgent: typeof navigator !== "undefined" ? navigator.userAgent : "Server",
+    };
+    const docRef = doc(db, "auditLogs", id);
+    await setDoc(docRef, sanitizeData(logItem));
+  } catch (err) {
+    console.warn("Erro ao registrar auditoria no Firestore:", err);
+  }
+}
+
+export function subscribeAuditLogsNuvem(
+  onUpdate: (logs: AuditLog[]) => void
+): () => void {
+  const colRef = collection(db, "auditLogs");
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const lista: AuditLog[] = [];
+      snapshot.forEach((d) => lista.push(d.data() as AuditLog));
+      lista.sort((a, b) => (b.timestamp > a.timestamp ? 1 : -1));
+      onUpdate(lista);
+    },
+    (err) => console.warn("Erro ao escutar logs de auditoria na nuvem:", err)
+  );
 }
 

@@ -282,7 +282,7 @@ export const ClosureStep: React.FC<ClosureStepProps> = ({
         </div>
 
         {/* Resumo Pericial Adaptado */}
-        <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 mb-4">
+        <div className="bg-slate-50 rounded-xl p-3 sm:p-4 border border-slate-200 mb-4 space-y-3">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
               <FileCheck2 className="w-4 h-4 text-slate-600" />
@@ -294,6 +294,112 @@ export const ClosureStep: React.FC<ClosureStepProps> = ({
               {mostrarMultas ? "Valores NR 28 Ativos" : "Valores Financeiros Ocultados"}
             </span>
           </div>
+
+          {/* Gráfico de Distribuição de Riscos (Donut Chart) */}
+          {(() => {
+            const total = state.evidencias.length;
+            const conformes = state.evidencias.filter((e) => e.status === "Conformidade").length;
+            const naoConformes = totalNaoConformidades;
+            const outros = total - conformes - naoConformes;
+
+            if (total === 0) return null;
+
+            const pConformes = (conformes / total) * 100;
+            const pNaoConformes = (naoConformes / total) * 100;
+            const pOutros = (outros / total) * 100;
+
+            const radius = 35;
+            const circ = 2 * Math.PI * radius;
+
+            const strokeConformes = (pConformes / 100) * circ;
+            const strokeNaoConformes = (pNaoConformes / 100) * circ;
+            const strokeOutros = (pOutros / 100) * circ;
+
+            let offsetConformes = 0;
+            let offsetNaoConformes = -strokeConformes;
+            let offsetOutros = -(strokeConformes + strokeNaoConformes);
+
+            return (
+              <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
+                <div className="relative w-24 h-24 flex items-center justify-center shrink-0">
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r={radius} fill="transparent" stroke="#e2e8f0" strokeWidth="14" />
+                    {conformes > 0 && (
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r={radius}
+                        fill="transparent"
+                        stroke="#10b981"
+                        strokeWidth="14"
+                        strokeDasharray={`${strokeConformes} ${circ - strokeConformes}`}
+                        strokeDashoffset={-offsetConformes}
+                      />
+                    )}
+                    {naoConformes > 0 && (
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r={radius}
+                        fill="transparent"
+                        stroke="#f43f5e"
+                        strokeWidth="14"
+                        strokeDasharray={`${strokeNaoConformes} ${circ - strokeNaoConformes}`}
+                        strokeDashoffset={offsetNaoConformes}
+                      />
+                    )}
+                    {outros > 0 && (
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r={radius}
+                        fill="transparent"
+                        stroke="#f59e0b"
+                        strokeWidth="14"
+                        strokeDasharray={`${strokeOutros} ${circ - strokeOutros}`}
+                        strokeDashoffset={offsetOutros}
+                      />
+                    )}
+                  </svg>
+                  <div className="absolute flex flex-col items-center justify-center text-center">
+                    <span className="text-sm font-bold text-slate-900">{total}</span>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Itens</span>
+                  </div>
+                </div>
+
+                <div className="flex-1 w-full space-y-2">
+                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>Distribuição de Conformidade &amp; Riscos</span>
+                  </h4>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-2 text-slate-600">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>
+                        Boas Práticas / Conformes ({conformes})
+                      </span>
+                      <span className="font-bold text-emerald-700">{pConformes.toFixed(0)}%</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-2 text-slate-600">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span>
+                        Não Conformidades ({naoConformes})
+                      </span>
+                      <span className="font-bold text-rose-700">{pNaoConformes.toFixed(0)}%</span>
+                    </div>
+                    {outros > 0 && (
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="flex items-center gap-2 text-slate-600">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block"></span>
+                          Outros ({outros})
+                        </span>
+                        <span className="font-bold text-amber-700">{pOutros.toFixed(0)}%</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="grid grid-cols-2 gap-2 text-xs mb-3">
             <div className="bg-white p-2.5 rounded-lg border border-slate-200">
