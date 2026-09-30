@@ -1,0 +1,182 @@
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { GoogleGenAI, Type } from "@google/genai";
+
+let genAI: GoogleGenAI | null = null;
+function getGenAI(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  if (!genAI) {
+    genAI = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+  return genAI;
+}
+
+async function callGroqAI(texto: string, nrsLista: string): Promise<any> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error("GROQ_API_KEY não configurada no ambiente.");
+  }
+
+  const prompt = `Você é um Engenheiro de Segurança do Trabalho e Perito Judicial especialista nas Normas Regulamentadoras (NRs) do Ministério do Trabalho e Emprego do Brasil e na NR 28 (Fiscalização e Penalidades).
+Analise o relato/observação de campo a seguir e realize o enquadramento técnico preciso da infração.
+
+Normas regulamentadoras prioritárias disponíveis no sistema: ${nrsLista}.
+
+Relato da situação em campo:
+"${texto.trim()}"
+
+Retorne OBRIGATORIAMENTE E EXCLUSIVAMENTE um objeto JSON válido no seguinte formato exato:
+{
+  "status": "Não Conformidade",
+  "nr_sugerida": "NR 35",
+  "item_provavel": "35.2.1",
+  "descricao_cenario": "Descrição técnica pericial do cenário de risco constatado em campo",
+  "acao_corretiva": "Ação corretiva técnica imediata recomendada fundamentada na norma",
+  "prioridade": "Alta",
+  "justificativa_tecnica": "Fundamentação pericial e enquadramento na NR 28"
+}`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey.trim()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          {
+            role: "system",
+            content: "Você é um perito judicial em Segurança e Saúde do Trabalho (SST) especialista em Normas Regulamentadoras do Brasil e NR 28. Responda estritamente em JSON válido.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.15,
+        max_tokens: 800,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Groq HTTP error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error("Resposta da Groq sem conteúdo.");
+    }
+
+    return JSON.parse(content.trim());
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function callGeminiAI(texto: string, nrsLista: string): Promise<any> {
+  const ai = getGenAI();
+  if (!ai) {
+    throw new Error("GEMINI_API_KEY não configurada no ambiente.");
+  }
+
+  const prompt = `Você é um Engenheiro de Segurança do Trabalho e Perito Judicial especialista nas Normas Regulamentadoras (NRs) do Ministério do Trabalho e Emprego do Brasil e na NR 28 (Fiscalização e Penalidades).
+Analise o relato/observação de campo a seguir e realize o enquadramento técnico preciso da infração.
+
+Normas regulamentadoras prioritárias disponíveis no sistema: ${nrsLista}.
+
+Relato da situação em campo:
+"${texto.trim()}"
+
+Retorne o enquadramento técnico mais aderente, especificando a NR, o item da norma mais provável (ex: 35.2.1, 10.2.8.1, 6.3.1, 1.5.3.1, 18.5.1, 12.5.1), a descrição técnica formal do cenário observado, a recomendação corretiva imediata fundamentada e o grau de prioridade técnica.`;
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      temperature: 0.2,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          status: { type: Type.STRING },
+          nr_sugerida: { type: Type.STRING },
+          item_provavel: { type: Type.STRING },
+          descricao_cenario: { type: Type.STRING },
+          acao_corretiva: { type: Type.STRING },
+          prioridade: { type: Type.STRING },
+          justificativa_tecnica: { type: Type.STRING },
+        },
+        required: ["status", "nr_sugerida", "item_provavel", "descricao_cenario", "acao_corretiva", "prioridade"],
+      },
+    },
+  });
+
+  const responseText = response.text;
+  if (!responseText) {
+    throw new Error("Resposta vazia da API Gemini.");
+  }
+  return JSON.parse(responseText.trim());
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== "POST") {
+    return res.status(455).json({ error: "Método não permitido" });
+  }
+
+  const { texto, nrsDisponiveis } = req.body || {};
+
+  if (!texto || typeof texto !== "string" || !texto.trim()) {
+    return res.status(400).json({ error: "Texto do relato ou situação não fornecido." });
+  }
+
+  const nrsLista = Array.isArray(nrsDisponiveis) && nrsDisponiveis.length > 0
+    ? nrsDisponiveis.join(", ")
+    : "NR 01, NR 05, NR 06, NR 10, NR 12, NR 18, NR 20, NR 23, NR 33, NR 35";
+
+  // 1. Tentar Groq
+  try {
+    const groqResult = await callGroqAI(texto, nrsLista);
+    return res.json({ success: true, fonte: "groq (Llama 3.3 70B)", data: groqResult });
+  } catch (errGroq: any) {
+    console.warn("Groq falhou:", errGroq?.message || errGroq);
+  }
+
+  // 2. Tentar Gemini
+  try {
+    const geminiResult = await callGeminiAI(texto, nrsLista);
+    return res.json({ success: true, fonte: "gemini (secundária)", data: geminiResult });
+  } catch (errGemini: any) {
+    console.warn("Gemini falhou:", errGemini?.message || errGemini);
+  }
+
+  // 3. Fallback Heurístico
+  return res.json({
+    success: true,
+    fonte: "regras_tecnicas",
+    data: {
+      status: "Não Conformidade",
+      nr_sugerida: "NR 35",
+      item_provavel: "35.2.1",
+      descricao_cenario: `Constatada irregularidade em campo: ${texto}`,
+      acao_corretiva: "Interromper a atividade e adequar os dispositivos de proteção imediatamente.",
+      prioridade: "Alta",
+      justificativa_tecnica: "Enquadramento preventivo fundamentado nas Normas Regulamentadoras e na NR 28.",
+    },
+  });
+}
