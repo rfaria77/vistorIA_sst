@@ -1,4 +1,0 @@
-// api/index.ts
-import app from '../server'; // ou importe a instância do express exportada pelo seu server.ts
-
-export default app;
