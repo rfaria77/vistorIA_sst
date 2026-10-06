@@ -303,7 +303,6 @@ export const InspectionHub: React.FC<InspectionHubProps> = ({
 
           {/* User Profile & Minimal Actions */}
           <div className="flex items-center gap-2">
-            <PWAInstallButton />
 
             {onVoltarPaginaInicial && (
               <button

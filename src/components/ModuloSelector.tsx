@@ -1,6 +1,7 @@
 import React from "react";
 import { ClipboardList, ShieldAlert, BarChart3, CalendarDays, Settings, LogOut, ArrowRight, Sparkles, Building2, User, Briefcase, Truck } from "lucide-react";
 import { UsuarioAuditor } from "../types";
+import { PWAInstallButton } from "./PWAInstallButton";
 
 interface ModuloSelectorProps {
   usuario: UsuarioAuditor;
@@ -41,6 +42,8 @@ export const ModuloSelector: React.FC<ModuloSelectorProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          <PWAInstallButton />
+
           {usuario.perfil === "admin" && (
             <button
               type="button"
